@@ -45,8 +45,10 @@ describe('mergeEvent', () => {
     let s = apply(fresh({ status: 'talking' }), { status: '__timeout' })
     expect(s.status).toBe('timeout')
     expect(mergeEvent(s, { status: 'ringing' }, T)).toBeNull()
+    expect(mergeEvent(s, { status: 'call-disconnected' }, T)).toBeNull() // no processing ↔ timeout flip-flop
     s = apply(s, { status: 'completed', extracted_data: quote })
     expect(s.status).toBe('done')
+    expect(mergeEvent(fresh(), { status: '__timeout', error_message: 'Bolna did not confirm the call in time' }, T)?.error).toBe('Bolna did not confirm the call in time')
   })
 
   it('never shrinks a transcript and records voicemail as a failure', () => {

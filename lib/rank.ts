@@ -42,6 +42,8 @@ const PLURAL: Record<string, string> = { piece: 'pieces', packet: 'packets', str
 // "2 packets", "1 packet", "0.5 kg" (English display only; the Hinglish agent variable keeps "2 packet").
 export const qtyLabel = (q: number, unit: string) => `${q} ${q === 1 ? unit : (PLURAL[unit] ?? unit)}`
 
+const positive = (n: number | null | undefined) => (n != null && n > 0 ? n : null)
+
 export function rankResults(req: Req, rows: Input[]): Ranked[] {
   const q = req.quantity
   const base = rows.map((r) => {
@@ -55,19 +57,22 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
           : x.in_stock === 'yes'
             ? 'full'
             : 'unknown'
-    const comparable = !x?.price_unit || normUnit(x.price_unit) === normUnit(req.unit)
-    const positive = (n: number | null | undefined) => (n != null && n > 0 ? n : null)
-    let unit = comparable ? positive(x?.unit_price_inr) : null
-    // A total is only meaningful when the shop can supply the full quantity it was asked about.
-    if (unit === null && comparable && stock === 'full' && positive(x?.total_price_inr)) unit = x!.total_price_inr! / q
-    const total = stock === 'full' && unit !== null ? (comparable && positive(x?.total_price_inr)) || Math.round(unit * q * 100) / 100 : null
-    return { r, x, stock, comparable, unit, total }
+    // unitMatch: true = price stated for the requested unit; false = for a different unit; null = unit not stated.
+    const unitMatch = x?.price_unit ? normUnit(x.price_unit) === normUnit(req.unit) : null
+    const comparable = unitMatch !== false
+    // A per-unit price is only multiplied out when the shop said which unit it was for (500 g × "₹120" is not
+    // ₹60,000). A quoted total for the full quantity it was asked about is used as given.
+    let unit = unitMatch === true ? positive(x?.unit_price_inr) : null
+    const quotedTotal = comparable && stock === 'full' ? positive(x?.total_price_inr) : null
+    if (unit === null && quotedTotal !== null) unit = quotedTotal / q
+    const total = stock === 'full' ? (quotedTotal ?? (unit !== null ? Math.round(unit * q * 100) / 100 : null)) : null
+    return { r, x, stock, comparable, unitMatch, unit, total }
   })
 
   const units = base.map((b) => b.unit).filter((u): u is number => u !== null)
   const minUnit = units.length ? Math.min(...units) : null
 
-  const ranked: Ranked[] = base.map(({ r, x, stock, comparable, unit, total }) => {
+  const ranked: Ranked[] = base.map(({ r, x, stock, comparable, unitMatch, unit, total }) => {
     const flags: string[] = []
     const factors = { stock: 0, price: 0, ready: 0, hold: 0, confidence: 0 }
     if (!x) {
@@ -82,12 +87,18 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     factors.confidence = CONFIDENCE[x.confidence]
     const score = Math.round((factors.stock + factors.price + factors.ready + factors.hold) * factors.confidence * 10) / 10
 
+    // With a budget or deadline set, an unknown price or readiness cannot count as meeting it.
     const overBudget = req.max_budget_inr !== null && total !== null && total > req.max_budget_inr
+    const budgetUnknown = req.max_budget_inr !== null && total === null
     const late = req.need_within_minutes !== null && x.ready_in_minutes !== null && x.ready_in_minutes > req.need_within_minutes
+    const readyUnknown = req.need_within_minutes !== null && x.ready_in_minutes === null
     if (stock !== 'full') flags.push(stock === 'none' ? 'Not in stock' : stock === 'short' ? 'Cannot supply the full quantity' : 'Stock unclear')
     if (overBudget) flags.push(`Over your ${inr(req.max_budget_inr!)} budget`)
+    if (budgetUnknown && stock === 'full') flags.push('Price not confirmed against your budget')
     if (late) flags.push(`Needs ~${x.ready_in_minutes} min; you need it within ${req.need_within_minutes} min`)
+    if (readyUnknown && stock === 'full') flags.push('Readiness not confirmed against your deadline')
     if (!comparable) flags.push(`Price quoted per ${x.price_unit}, not per ${req.unit}: not compared`)
+    else if (unit === null && positive(x.unit_price_inr) && stock !== 'none') flags.push('Price unit not stated: not compared')
     else if (unit === null && stock !== 'none') flags.push('Price not quoted')
     if (x.confidence === 'low') flags.push('Low-confidence answer')
 
@@ -95,12 +106,18 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
       stock === 'full' ? `Has all ${qtyLabel(q, req.unit)}` : stock === 'short' ? (x.qty_available !== null ? `Only ${x.qty_available} available` : 'Partial stock') : stock === 'none' ? 'Not in stock' : 'Stock unclear',
     ]
     if (stock !== 'none') {
-      parts.push(total !== null ? `${inr(total)} total${q !== 1 && unit !== null ? ` (${inr(unit)} each)` : ''}` : unit !== null ? `${inr(unit)} per ${req.unit}` : 'price not quoted')
+      parts.push(
+        total !== null ? `${inr(total)} total${q !== 1 && unit !== null ? ` (${inr(unit)} each)` : ''}`
+        : unit !== null ? `${inr(unit)} per ${req.unit}`
+        : unitMatch === null && positive(x.unit_price_inr) ? `${inr(x.unit_price_inr!)} (unit not stated)`
+        : 'price not quoted',
+      )
       parts.push(x.ready_in_minutes === null ? 'readiness not confirmed' : x.ready_in_minutes === 0 ? 'ready now' : `ready in ~${x.ready_in_minutes} min`)
       parts.push(x.can_hold === 'yes' ? 'can hold it' : x.can_hold === 'no' ? 'cannot hold it' : 'hold not confirmed')
     }
     const ready = stock === 'none' ? null : x.ready_in_minutes
-    return { id: r.id, shopName: r.shopName, status: r.status, ready, stock, unit, total, comparable, factors, score, eligible: stock === 'full' && !overBudget && !late, flags, explanation: parts.join(' · '), winner: false }
+    const eligible = stock === 'full' && !overBudget && !late && !budgetUnknown && !readyUnknown
+    return { id: r.id, shopName: r.shopName, status: r.status, ready, stock, unit, total, comparable, factors, score, eligible, flags, explanation: parts.join(' · '), winner: false }
   })
 
   ranked.sort(
@@ -126,7 +143,7 @@ export function winnerReason(ranked: Ranked[], hold: 'confirmed' | 'declined' | 
   const unpriced = ranked.filter((r) => r.stock !== 'none' && r.stock !== 'unknown' && r.unit === null).length
   const bits: string[] = []
   if (w.total !== null && priced.length > 1 && priced.every((r) => r.total! >= w.total!)) bits.push(`Lowest verified total of ${priced.length} priced quotes for the full quantity`)
-  else if (full.length === 1) bits.push('Only shop that confirmed the full quantity within your limits')
+  else if (full.length === 1) bits.push('Only shop that confirmed everything you asked for')
   else bits.push(`Highest score among ${full.length} shops that confirmed the full quantity`)
   if (unpriced) bits.push(`${unpriced} shop${unpriced > 1 ? 's' : ''} did not quote a comparable price`)
   bits.push(

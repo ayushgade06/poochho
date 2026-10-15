@@ -93,4 +93,5 @@ export type Execution = {
 
 // What the browser receives: never phone numbers, never the scripted future.
 export type PublicExecution = Omit<Execution, 'script' | 'script_cursor' | 'version' | 'raw_extracted' | 'last_polled_at'> & { shop: Shop }
-export type SearchState = { request: SearchRequest; executions: PublicExecution[] }
+// `redacted`: a LIVE search viewed without the operator token (no transcripts, notes or raw errors).
+export type SearchState = { request: SearchRequest; executions: PublicExecution[]; redacted?: boolean }

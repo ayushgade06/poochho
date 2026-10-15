@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { CONFIDENCE, inr, qtyLabel, WEIGHTS, winnerReason, type Ranked } from '@/lib/rank'
-import { holdOutcome, shareText, summarize, type HoldOutcome } from '@/lib/summary'
+import { holdOutcome, searchSummary, shareText, type HoldOutcome } from '@/lib/summary'
 import type { PublicExecution, SearchState } from '@/lib/types'
 import { speakText, token } from './ui'
 
@@ -21,7 +21,7 @@ export default function Results({ data, ranked, holds, finished }: { data: Searc
   const holdFor = (r: Ranked) => holds.find((h) => h.shop_id === byId.get(r.id)?.shop_id)
   const winnerHold = winner && holdFor(winner)
   const hold = winnerHold ? { shopName: winner!.shopName, outcome: holdOutcome(winnerHold) } : null
-  const summary = summarize(req, ranked, req.language, hold)
+  const summary = searchSummary(data)
 
   return (
     <section className="space-y-6" aria-labelledby="results">
@@ -30,7 +30,8 @@ export default function Results({ data, ranked, holds, finished }: { data: Searc
       </h2>
 
       {winner ? (
-        <WinnerCard data={data} r={winner} hold={winnerHold} why={winnerReason(ranked, hold?.outcome ?? null)} />
+        // keyed by shop: a half-confirmed "Hold it" must never carry over to a different winner
+        <WinnerCard key={winner.id} data={data} r={winner} hold={winnerHold} why={winnerReason(ranked, hold?.outcome ?? null)} />
       ) : (
         finished && (
           <div className="rounded-2xl border-2 border-dashed border-line bg-card p-6">
@@ -49,7 +50,7 @@ export default function Results({ data, ranked, holds, finished }: { data: Searc
         <p className="flex-1 text-lg leading-relaxed" lang={req.language}>
           {summary}
         </p>
-        <SpeakButton text={summary} lang={req.language} />
+        <SpeakButton searchId={req.id} text={summary} lang={req.language} />
       </div>
     </section>
   )
@@ -77,7 +78,7 @@ function WinnerCard({ data, r, hold, why }: { data: SearchState; r: Ranked; hold
       {why && <p className="mt-1 text-muted">Why: {why}</p>}
       {outcome && <p className={`mt-3 text-lg font-semibold ${OUTCOME[outcome][1]}`}>{OUTCOME[outcome][0]}</p>}
       <div className="mt-6 flex flex-wrap gap-3">
-        {!hold && <HoldButton data={data} executionId={r.id} shopName={r.shopName} />}
+        {!hold && <HoldButton key={r.id} data={data} executionId={r.id} shopName={r.shopName} />}
         <a
           className="inline-flex items-center gap-2 rounded-xl bg-[#1f7a43] px-5 py-3 font-semibold text-white"
           href={`https://wa.me/?text=${encodeURIComponent(shareText(req, r, reserved))}`}
@@ -169,7 +170,7 @@ function Ledger({ data, ranked, holdFor }: { data: SearchState; ranked: Ranked[]
                   {answered && r.flags.some((f) => !r.explanation.startsWith(f)) && <span className="block text-sm text-chili">{r.flags.filter((f) => !r.explanation.startsWith(f)).join(' · ')}</span>}
                 </td>
                 <td className="px-3 py-3">{!answered ? muted('not reached') : r.stock === 'full' ? <span className="text-kirana">✓ all {req.quantity}</span> : r.stock === 'short' ? <span className="text-marigold-deep">{x?.qty_available !== null && x?.qty_available !== undefined ? `only ${x.qty_available}` : 'partial'}</span> : r.stock === 'none' ? <span className="text-chili">✕ none</span> : muted('unclear')}</td>
-                <td className="px-3 py-3">{!x || r.stock === 'none' ? muted('—') : !r.comparable ? muted(`per ${x.price_unit}`) : r.unit !== null ? inr(r.unit) : muted('not quoted')}</td>
+                <td className="px-3 py-3">{!x || r.stock === 'none' ? muted('—') : !r.comparable ? muted(`per ${x.price_unit}`) : r.unit !== null ? inr(r.unit) : x.unit_price_inr ? muted(`${inr(x.unit_price_inr)}, unit not stated`) : muted('not quoted')}</td>
                 <td className="px-3 py-3 font-semibold">{r.total !== null ? inr(r.total) : muted(r.stock === 'short' ? 'n/a (short)' : '—')}</td>
                 <td className="px-3 py-3">{x?.brand_or_variant ?? muted(x && r.stock !== 'none' ? 'not stated' : '—')}</td>
                 <td className="px-3 py-3">{x && r.stock !== 'none' ? (x.pickup_or_delivery === 'unknown' ? muted('not discussed') : x.pickup_or_delivery) : muted('—')}</td>
@@ -215,11 +216,11 @@ function Bars({ f }: { f: Ranked['factors'] }) {
   )
 }
 
-function SpeakButton({ text, lang }: { text: string; lang: 'hi' | 'en' }) {
+function SpeakButton({ searchId, text, lang }: { searchId: string; text: string; lang: 'hi' | 'en' }) {
   const [via, setVia] = useState<string | null>(null)
   return (
     <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
-      <button className="rounded-xl border-2 border-ink px-5 py-3 font-semibold hover:bg-ink hover:text-paper" onClick={async () => setVia(await speakText(text, lang))}>
+      <button className="rounded-xl border-2 border-ink px-5 py-3 font-semibold hover:bg-ink hover:text-paper" onClick={async () => setVia(await speakText(searchId, text, lang))}>
         🔊 Hear the summary
       </button>
       {via && <span className="text-xs text-muted">{via === 'sarvam' ? 'Voice: Sarvam' : via === 'browser' ? "Voice: this browser's speech" : 'No speech available here; please read the text.'}</span>}

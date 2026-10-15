@@ -31,15 +31,15 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     if (v.length > max) errors[k] = `At most ${max} characters`
     return v.slice(0, max)
   }
-  const num = (k: string, min: number, max: number, required = false) => {
+  const num = (k: string, min: number, max: number, required = false, integer = false) => {
     const raw = b[k]
     if (raw === undefined || raw === null || raw === '') {
       if (required) errors[k] = 'Required'
       return null
     }
     const n = typeof raw === 'number' ? raw : Number(raw)
-    if (!Number.isFinite(n) || n < min || n > max) {
-      errors[k] = `Must be between ${min} and ${max}`
+    if (!Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n))) {
+      errors[k] = `Must be ${integer ? 'a whole number ' : ''}between ${min} and ${max}`
       return null
     }
     return n
@@ -57,7 +57,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
   const mode = oneOf('mode', ['simulated', 'live'] as const, true)
   const product = text('product', 120, true)
   const quantity = num('quantity', 0.01, 1000, true)
-  if (quantity !== null && Math.round(quantity * 100) !== quantity * 100) errors.quantity = 'At most two decimals'
+  if (quantity !== null && Math.abs(Math.round(quantity * 100) - quantity * 100) > 1e-6) errors.quantity = 'At most two decimals'
   const unit = oneOf('unit', UNITS, true)
   const language = oneOf('language', Object.keys(LANGS) as Lang[], true)
   const shopIds = Array.isArray(b.shop_ids) ? [...new Set(b.shop_ids)] : []
@@ -76,7 +76,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     area: text('area', 80, true) ?? '',
     language: language ?? 'hi',
     max_budget_inr: num('max_budget_inr', 1, 10_000_000),
-    need_within_minutes: num('need_within_minutes', 5, 1440),
+    need_within_minutes: num('need_within_minutes', 5, 1440, false, true),
     constraints: text('constraints', 300),
     shop_ids: shopIds as string[],
   }

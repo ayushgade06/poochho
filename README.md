@@ -48,8 +48,11 @@ flowchart LR
   - Duplicates are no-ops.
   - Merges use optimistic concurrency (a `version` column), so concurrent webhooks cannot lose updates.
 - **No double dialling.** `claim_live_calls()` (SQL, advisory lock) claims queued calls atomically and never
-  exceeds `MAX_CONCURRENCY` in flight. Consent and opt-out are re-checked at dial time. Bolna is never asked to
-  retry.
+  exceeds `MAX_CONCURRENCY` in flight; recent timeouts still count as in flight. Calls left queued for more than
+  10 minutes expire rather than dial late.
+- **Checks at dial time.** Turning LIVE off, the calling window, consent and opt-out are all re-checked right
+  before dialling. A call Bolna accepted is never marked failed: if its id can't be stored, the webhook is matched
+  through the id we send in `user_data`. Bolna is never asked to retry, and calls it reschedules are stopped.
 - **Realtime without exposing data.** The tables are closed to the publishable key. A trigger broadcasts
   `{execution_id, status}` on a per-search public channel, and the browser refetches through the API. The tick
   response doubles as a polling fallback.
@@ -92,7 +95,7 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 | `SUPABASE_SECRET_KEY` | all | **Server only.** Bypasses RLS. Never prefix with `NEXT_PUBLIC_` |
 | `BOLNA_API_KEY`, `BOLNA_AGENT_ID` | LIVE | `BOLNA_HOLD_AGENT_ID` optional (defaults to the main agent) |
 | `BOLNA_FROM_NUMBER` | optional | Caller ID from your Bolna account |
-| `BOLNA_WEBHOOK_SECRET` | LIVE | Sent by Bolna in the `x-poochho-secret` header |
+| `BOLNA_WEBHOOK_SECRET` | LIVE | Sent by Bolna in the `x-poochho-secret` header (header only, never in the URL) |
 | `BOLNA_WEBHOOK_IPS` | optional | Source-IP allowlist |
 | `LIVE_CALLS_ENABLED` | LIVE | Must be `true`. Default `false` |
 | `POOCHHO_ADMIN_TOKEN` | LIVE, labels, export | Operator token (12+ chars) |
@@ -100,15 +103,17 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 | `MAX_CONCURRENCY` | | Default 8. Use 2 on a Bolna trial |
 | `MAX_LIVE_CALLS_PER_DAY` | | Default 25 |
 | `CALL_WINDOW_IST` | | Default `09:00-20:00` |
-| `CALL_WATCHDOG_SECONDS` | | Default 300 |
+| `CALL_WATCHDOG_SECONDS` | | Default 300 (minimum 120), measured from the last call milestone |
 | `SARVAM_API_KEY` | optional | Sarvam STT (`saaras:v4`) and TTS (`bulbul:v3`). Without it the browser's speech APIs are used |
 
 ## Database
 
-Two migrations in `supabase/migrations/`:
+Three migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
+- **`20261016020000_review_fixes.sql`**: an opt-out trigger that records an opt-out in the same write as the
+  call update; queue expiry; timeouts counted in concurrency.
 
 Tables:
 
@@ -132,7 +137,11 @@ Apply them with either:
   gets `42501 permission denied` everywhere.
 - There are no user accounts. A search is readable by whoever holds its unguessable URL. The search API never
   returns phone numbers.
-- Transcripts, labels and exports are operator-only.
+- For LIVE searches, transcripts, free-text notes and raw provider errors are returned only with the operator
+  token. Simulated and replayed calls are fictional and shown in full.
+- Labels and exports are operator-only.
+- Sarvam STT needs the operator token. Sarvam TTS only speaks the server-computed summary of an existing
+  search, so neither can be used as an open proxy on your key.
 
 **Retention.** Data stays until you delete it. Delete everything older than 30 days with:
 
@@ -167,8 +176,8 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 48 unit tests (validation, extraction, state machine, ranking, summaries, voice parsing, metrics/CSV, webhook route with a mocked engine) |
-| `npm run test:integration` | Real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out suppression, holds, Realtime delivery, RLS denial. LIVE dispatch, concurrency, polling and no auto-retry run against a **mocked** Bolna. No call is ever placed |
+| `npm test` | 52 unit tests (validation, extraction, state machine, ranking, summaries, voice parsing, metrics/CSV, webhook route with a mocked engine) |
+| `npm run test:integration` | 15 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |

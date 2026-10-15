@@ -22,6 +22,12 @@ describe('validateSearch', () => {
     if (!r.ok) expect(Object.keys(r.errors).sort()).toEqual(['category', 'language', 'max_budget_inr', 'mode', 'quantity', 'unit'])
   })
 
+  it('accepts two-decimal quantities despite floating point, and whole minutes only', () => {
+    for (const q of ['1.1', '2.3', '1.15', '0.07', '4.35']) expect(validateSearch({ ...good, quantity: q }, 5).ok).toBe(true)
+    expect(validateSearch({ ...good, quantity: '1.234' }, 5).ok).toBe(false)
+    expect(validateSearch({ ...good, need_within_minutes: 45.5 }, 5).ok).toBe(false)
+  })
+
   it('enforces the per-request call cap and shop id format', () => {
     expect(validateSearch({ ...good, shop_ids: ['a', 'b', 'c'] }, 2).ok).toBe(false)
     expect(validateSearch({ ...good, shop_ids: ['ok', 'Bad Id!'] }, 5).ok).toBe(false)

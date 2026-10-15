@@ -6,9 +6,11 @@ import { qtyLabel, rankResults } from '@/lib/rank'
 import { LANGS, type SearchState } from '@/lib/types'
 import CallCard from './CallCard'
 import Results from './Results'
-import { browserSupabase, ModeBanner } from './ui'
+import { browserSupabase, ModeBanner, token } from './ui'
 
 type ReplayMeta = { id: string; source: 'live' | 'simulated'; recorded_at: string }
+// The operator token (if this tab has one) unlocks transcripts of LIVE calls.
+const authHeaders = (): Record<string, string> => (token.get() ? { 'x-admin-token': token.get() } : {})
 
 export default function SearchView({ id }: { id: string }) {
   const [data, setData] = useState<SearchState | null>(null)
@@ -24,7 +26,7 @@ export default function SearchView({ id }: { id: string }) {
     const refetch = () => {
       clearTimeout(t)
       t = setTimeout(() => {
-        fetch(`/api/searches/${id}`, { cache: 'no-store' })
+        fetch(`/api/searches/${id}`, { cache: 'no-store', headers: authHeaders() })
           .then(async (r) => {
             if (!alive) return
             if (r.ok) setData(await r.json())
@@ -45,7 +47,8 @@ export default function SearchView({ id }: { id: string }) {
   }, [id])
 
   const mode = data?.request.mode
-  const active = !data || data.executions.some((e) => e.status !== 'done' && e.status !== 'failed')
+  // A timed-out call is still polled for 30 minutes in case a late result lands; after that, stop ticking.
+  const active = !data || data.executions.some((e) => e.status !== 'done' && e.status !== 'failed' && !(e.status === 'timeout' && now && e.dispatched_at && now - Date.parse(e.dispatched_at) > 1_800_000))
 
   // The tick advances scripted steps, live dispatch, provider polling and the watchdog. It also returns the
   // fresh state, so the page keeps working even if Realtime is unavailable.
@@ -55,7 +58,7 @@ export default function SearchView({ id }: { id: string }) {
     let timer: ReturnType<typeof setTimeout> | undefined
     const step = async () => {
       try {
-        const r = await fetch(`/api/searches/${id}/tick`, { method: 'POST' })
+        const r = await fetch(`/api/searches/${id}/tick`, { method: 'POST', headers: authHeaders() })
         if (alive && r.ok) setData(await r.json())
       } catch {}
       if (alive) timer = setTimeout(step, mode === 'live' ? 3000 : 1000)
@@ -130,13 +133,14 @@ export default function SearchView({ id }: { id: string }) {
       <div className="h-2 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuemin={0} aria-valuemax={quotes.length} aria-valuenow={finishedN} aria-label={progress}>
         <div className="h-full rounded-full bg-kirana transition-[width] duration-700" style={{ width: `${quotes.length ? (finishedN / quotes.length) * 100 : 0}%` }} />
       </div>
+      {data.redacted && <p className="text-sm text-muted">Transcripts of real calls are shown to the operator only (enter the operator token on the home page in this tab).</p>}
       <p className="sr-only" aria-live="polite">
         {progress}
       </p>
 
       <section aria-label="Calls" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {[...quotes, ...holds].map((e) => (
-          <CallCard key={e.id} e={e} now={now} quantity={req.quantity} unit={req.unit} />
+          <CallCard key={e.id} e={e} now={now} quantity={req.quantity} />
         ))}
       </section>
 

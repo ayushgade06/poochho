@@ -38,6 +38,9 @@ describe('parseExtraction', () => {
     const x = parseExtraction({ in_stock: 'yes', unit_price_inr: '500-600', total_price_inr: -5, qty_available: 'a few', ready_in_minutes: 'soon' })!
     expect([x.unit_price_inr, x.total_price_inr, x.qty_available, x.ready_in_minutes]).toEqual([null, null, null, null])
     expect(parseExtraction({ in_stock: 'yes', unit_price_inr: 'Rs. 45.5' })!.unit_price_inr).toBe(45.5)
+    // A price of 0 is not a price; a quantity or readiness of 0 is meaningful.
+    expect(parseExtraction({ in_stock: 'yes', unit_price_inr: '0', total_price_inr: 0, qty_available: 0, ready_in_minutes: '0' })).toMatchObject({ unit_price_inr: null, total_price_inr: null, qty_available: 0, ready_in_minutes: 0 })
+    expect(isUsableQuote(parseExtraction({ in_stock: 'yes', total_price_inr: '0' }))).toBe(false)
   })
 
   it('maps only exact enum values and defaults conservatively', () => {

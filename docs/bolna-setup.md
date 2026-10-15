@@ -90,7 +90,8 @@ a search page is open, so LIVE mode still works locally without a tunnel. Webhoo
 | Calling tab | Auto Reschedule | off | Poochho never follows up later on its own |
 
 Poochho never sends `retry_config`, so Bolna does not retry calls. If Bolna reports `rescheduled`, Poochho marks the
-call failed and asks Bolna to stop it.
+call failed and keeps asking Bolna to stop it while the search page is open. Stopping only works while the call is
+queued or scheduled, so keep Bolna's own timing restriction off or wider than `CALL_WINDOW_IST`.
 
 ## 5. Prompt suggestions (optional; have a native speaker review them)
 

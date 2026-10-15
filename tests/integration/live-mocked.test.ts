@@ -6,15 +6,21 @@ process.env.CALL_WINDOW_IST = '00:00-23:59' // run at any hour
 process.env.MAX_CONCURRENCY = '2'
 process.env.BOLNA_API_KEY = 'mock-key'
 process.env.BOLNA_AGENT_ID = 'mock-agent'
+process.env.LIVE_CALLS_ENABLED = 'true'
+process.env.POOCHHO_ADMIN_TOKEN = 'test-operator-token-123'
+process.env.BOLNA_WEBHOOK_SECRET = 'test-webhook-secret'
 
 const realFetch = globalThis.fetch
 const started: { to: string; body: Record<string, unknown> }[] = []
 const polled: Record<string, unknown> = {}
+let callMode: 'ok' | 'refuse' | 'hang' = 'ok' // how the mocked POST /call behaves
 vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input instanceof Request ? input.url : input)
   if (!url.startsWith('https://api.bolna.ai')) return realFetch(input, init)
   if (url.endsWith('/call') && init?.method === 'POST') {
     const body = JSON.parse(String(init.body))
+    if (callMode === 'refuse') return Response.json({ error: 1001, message: 'Invalid recipient_phone_number' }, { status: 400 })
+    if (callMode === 'hang') throw new TypeError('fetch failed') // network error: the call may or may not exist
     started.push({ to: body.recipient_phone_number, body })
     return Response.json({ message: 'done', status: 'queued', execution_id: `mock-${started.length}` })
   }
@@ -23,7 +29,7 @@ vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
   return Response.json({ message: 'not mocked' }, { status: 404 })
 })
 
-const { applyEvent, db, dispatchQueued, getSearch, tick } = await import('@/lib/engine')
+const { adoptExecution, applyEvent, db, dispatchQueued, getSearch, tick } = await import('@/lib/engine')
 const SHOPS = ['zz-mock-a', 'zz-mock-b', 'zz-mock-c', 'zz-mock-d']
 let requestId = ''
 
@@ -49,6 +55,7 @@ describe('LIVE orchestration against a mocked Bolna', () => {
     expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(2)
     expect(started[0].body).toMatchObject({ agent_id: 'mock-agent', user_data: { item: 'Dolo 650', quantity: '2 strip', customer_area: 'Kothrud', call_purpose: 'quote', timezone: 'Asia/Kolkata' } })
     expect(started[0].body).not.toHaveProperty('retry_config') // Bolna never retries on its own
+    expect((started[0].body.user_data as Record<string, string>).poochho_execution_id).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it('applies webhooks by provider id, frees the line, and dispatches the next queued call', async () => {
@@ -77,5 +84,57 @@ describe('LIVE orchestration against a mocked Bolna', () => {
     expect(started.length).toBe(4) // the no-answer call was not re-dialled
     const events = await db().from('call_events').select('source').eq('source', 'poll')
     expect(events.error).toBeNull()
+  })
+
+  it('hides live transcripts unless the operator token is presented', async () => {
+    const pub = (await getSearch(requestId))!
+    expect(pub.redacted).toBe(true)
+    expect(pub.executions.every((e) => e.transcript === null)).toBe(true)
+    const op = (await getSearch(requestId, true))!
+    expect(op.executions.find((e) => e.provider_execution_id === 'mock-1')?.transcript).toContain('assistant: hi')
+  })
+})
+
+describe('LIVE safety edges (mocked Bolna)', () => {
+  const queue = async (minutesAgo = 0) => {
+    const r = await db().from('call_executions').insert({ request_id: requestId, shop_id: SHOPS[0], mode: 'live', status: 'queued', created_at: new Date(Date.now() - minutesAgo * 60_000).toISOString() }).select('id').single()
+    return r.data!.id as string
+  }
+  const row = async (id: string) => (await db().from('call_executions').select('status, error, provider_execution_id').eq('id', id).single()).data!
+
+  it('turning LIVE off fails queued calls instead of dialling them', async () => {
+    const id = await queue()
+    const before = started.length
+    process.env.LIVE_CALLS_ENABLED = 'false'
+    await dispatchQueued()
+    process.env.LIVE_CALLS_ENABLED = 'true'
+    expect(started.length).toBe(before)
+    expect(await row(id)).toMatchObject({ status: 'failed', error: expect.stringContaining('LIVE calling is disabled') })
+  })
+
+  it('expires calls left in the queue for over 10 minutes', async () => {
+    await db().from('call_executions').update({ status: 'done' }).eq('request_id', requestId).in('status', ['dispatching', 'ringing', 'talking']) // free the lines
+    const id = await queue(11)
+    const before = started.length
+    await dispatchQueued()
+    expect(started.length).toBe(before)
+    expect(await row(id)).toMatchObject({ status: 'failed', error: expect.stringContaining('expired') })
+  })
+
+  it('marks a refused call failed, but keeps an unconfirmed one open for a late webhook', async () => {
+    callMode = 'refuse'
+    const refused = await queue()
+    await dispatchQueued()
+    expect(await row(refused)).toMatchObject({ status: 'failed', error: expect.stringContaining('Bolna 400') })
+
+    callMode = 'hang'
+    const unsure = await queue()
+    await dispatchQueued()
+    expect(await row(unsure)).toMatchObject({ status: 'timeout', provider_execution_id: null })
+    callMode = 'ok'
+    // The call did go through: its webhook carries our id in recipient_data and is adopted.
+    await adoptExecution(unsure, 'mock-late')
+    await applyEvent({ providerId: 'mock-late' }, { status: 'completed', duration: 25, extracted_data: { Q: { in_stock: { objective: 'yes', subjective: '' } } } }, 'webhook')
+    expect(await row(unsure)).toMatchObject({ status: 'done', provider_execution_id: 'mock-late' })
   })
 })

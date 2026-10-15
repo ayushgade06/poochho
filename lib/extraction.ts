@@ -38,15 +38,16 @@ export function parseExtraction(raw: unknown): Extraction | null {
     const w = word(k)
     return allowed.includes(w as T) ? (w as T) : fallback
   }
-  const number = (k: string, max: number, integer = false) => {
+  const number = (k: string, max: number, integer = false, min = 0) => {
     let v = get(k)
     if (typeof v === 'string') {
       const s = v.replace(/₹|rs\.?|inr|rupees?|,/gi, '').trim()
       v = /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN // ranges like "500-600" stay unknown
     }
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > max) return null
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max) return null
     return integer ? Math.floor(v) : Math.round(v * 100) / 100
   }
+  const PRICE_MIN = 0.01 // a quoted price of 0 is not a price
   const str = (k: string, max: number) => {
     const v = get(k)
     if (typeof v !== 'string') return null
@@ -64,8 +65,8 @@ export function parseExtraction(raw: unknown): Extraction | null {
 
   const x: Extraction = {
     in_stock: pick('in_stock', ['yes', 'no', 'partial', 'unsure'], 'unsure'),
-    unit_price_inr: number('unit_price_inr', 10_000_000),
-    total_price_inr: number('total_price_inr', 10_000_000),
+    unit_price_inr: number('unit_price_inr', 10_000_000, false, PRICE_MIN),
+    total_price_inr: number('total_price_inr', 10_000_000, false, PRICE_MIN),
     price_unit: str('price_unit', 30),
     qty_available: number('qty_available', 1_000_000),
     brand_or_variant: str('brand_or_variant', 120),

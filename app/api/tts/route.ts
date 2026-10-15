@@ -1,16 +1,20 @@
+import { errorResponse, getSearch, isUuid } from '@/lib/engine'
 import { sarvamConfigured, speak } from '@/lib/sarvam'
+import { searchSummary } from '@/lib/summary'
 
-// Spoken summary via Sarvam. 501 tells the browser to use speechSynthesis instead.
+// Spoken summary via Sarvam. It speaks only the server-computed summary of an existing search, so it can't
+// be used as a general text-to-speech proxy on the operator's key. 501 means "use the browser's voice".
 export async function POST(req: Request) {
   if (!sarvamConfigured()) return Response.json({ error: 'Sarvam is not configured' }, { status: 501 })
   const body = await req.json().catch(() => null)
-  const text = typeof body?.text === 'string' ? body.text.trim() : ''
-  if (!text || text.length > 2500) return Response.json({ error: 'Text must be 1–2500 characters.' }, { status: 400 })
+  const id = typeof body?.search_id === 'string' ? body.search_id : ''
+  if (!isUuid(id)) return Response.json({ error: 'search_id is required.' }, { status: 400 })
   try {
-    const wav = await speak(text, body.lang === 'en' ? 'en' : 'hi')
+    const s = await getSearch(id)
+    if (!s) return Response.json({ error: 'Not found.' }, { status: 404 })
+    const wav = await speak(searchSummary(s), s.request.language)
     return new Response(new Uint8Array(wav), { headers: { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' } })
   } catch (e) {
-    console.error((e as Error).message)
-    return Response.json({ error: 'Speech failed.' }, { status: 502 })
+    return errorResponse(e)
   }
 }

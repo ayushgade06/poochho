@@ -7,7 +7,7 @@ import { Lamp, reason, STATUS } from './ui'
 
 const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
-export default function CallCard({ e, now, quantity, unit }: { e: PublicExecution; now: number; quantity: number; unit: string }) {
+export default function CallCard({ e, now, quantity }: { e: PublicExecution; now: number; quantity: number }) {
   const s = STATUS[e.status]
   const live = !['done', 'failed', 'timeout'].includes(e.status)
   const x = e.extracted
@@ -42,7 +42,7 @@ export default function CallCard({ e, now, quantity, unit }: { e: PublicExecutio
         <dl className="mt-3 flex flex-wrap gap-2 text-sm">
           <Chip k="Stock" v={x.in_stock === 'yes' ? (x.qty_available !== null && x.qty_available < quantity ? `only ${x.qty_available}` : 'yes') : x.in_stock === 'partial' ? (x.qty_available !== null ? `only ${x.qty_available}` : 'partial') : x.in_stock === 'no' ? 'no' : 'unclear'} tone={x.in_stock === 'yes' ? 'good' : x.in_stock === 'no' ? 'bad' : 'warn'} />
           {x.in_stock !== 'no' && (
-            <Chip k="Price" v={x.total_price_inr !== null ? `${inr(x.total_price_inr)} total` : x.unit_price_inr !== null ? `${inr(x.unit_price_inr)} / ${x.price_unit ?? unit}` : 'not quoted'} tone={x.total_price_inr ?? x.unit_price_inr ? 'good' : 'warn'} />
+            <Chip k="Price" v={x.total_price_inr !== null ? `${inr(x.total_price_inr)} total` : x.unit_price_inr !== null ? (x.price_unit ? `${inr(x.unit_price_inr)} / ${x.price_unit}` : `${inr(x.unit_price_inr)} (unit not stated)`) : 'not quoted'} tone={x.total_price_inr ?? x.unit_price_inr ? 'good' : 'warn'} />
           )}
           {x.in_stock !== 'no' && <Chip k="Ready" v={x.ready_in_minutes === null ? 'not confirmed' : x.ready_in_minutes === 0 ? 'now' : `~${x.ready_in_minutes} min`} tone={x.ready_in_minutes === null ? 'warn' : 'good'} />}
           {e.kind === 'hold' ? (

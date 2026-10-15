@@ -34,15 +34,15 @@ type State = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_s
 
 // Pure merge of one provider event into the stored state. Returns null when nothing changes, which makes
 // duplicate deliveries no-ops. Rules: status only moves forward; done/failed are final; our own "timeout"
-// yields only to a real provider outcome; transcripts only grow; a final ("completed") extraction wins.
+// yields only to a final provider outcome; transcripts only grow; a final ("completed") extraction wins.
 export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
   const patch: Partial<Execution> = {}
   // Bolna: "completed" with conversation_duration 0 means no conversation took place.
   const silent = mapStatus(ev.status) === 'done' && ev.duration === 0
   const mapped = ev.answered_by_voice_mail || silent ? 'failed' : mapStatus(ev.status)
   if (mapped && !isTerminal(cur.status)) {
-    const moves =
-      cur.status === 'timeout' ? isTerminal(mapped) || mapped === 'processing' : mapped === 'timeout' || RANK[mapped] > RANK[cur.status]
+    // Our own "timeout" yields only to a final provider outcome; a late non-final event must not reopen it.
+    const moves = cur.status === 'timeout' ? isTerminal(mapped) : mapped === 'timeout' || RANK[mapped] > RANK[cur.status]
     if (moves && mapped !== cur.status) {
       patch.status = mapped
       if (!ev.status.startsWith('__')) patch.provider_status = ev.status
@@ -54,7 +54,7 @@ export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
           : ev.status === 'rescheduled' ? 'provider rescheduled it outside calling hours; not followed up'
           : ev.status === 'balance-low' ? 'Bolna wallet balance too low'
           : ev.error_message || ev.status
-      if (mapped === 'timeout') patch.error = 'No provider update before the watchdog deadline'
+      if (mapped === 'timeout') patch.error = ev.error_message || 'No provider update before the watchdog deadline'
       if (mapped === 'done') patch.error = null
     }
   }

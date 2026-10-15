@@ -1,8 +1,11 @@
+import { isAdmin } from '@/lib/config'
 import { sarvamConfigured, transcribe } from '@/lib/sarvam'
 
-// Voice input via Sarvam. 501 tells the browser to use its own speech recognition instead.
+// Voice input via Sarvam, operator-only so the paid key can't be used as an open proxy. 501 or 401 tells
+// the browser to use its own speech recognition instead.
 export async function POST(req: Request) {
   if (!sarvamConfigured()) return Response.json({ error: 'Sarvam is not configured' }, { status: 501 })
+  if (!isAdmin(req)) return Response.json({ error: 'Sarvam voice input needs the operator token.' }, { status: 401 })
   const form = await req.formData().catch(() => null)
   const audio = form?.get('audio')
   if (!(audio instanceof Blob) || !audio.size) return Response.json({ error: 'No audio received.' }, { status: 400 })

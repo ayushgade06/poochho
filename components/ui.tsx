@@ -93,10 +93,11 @@ export const token = {
   },
 }
 
-// ---------- speech out: Sarvam TTS when configured, else the browser's own voice ----------
-export async function speakText(text: string, lang: 'hi' | 'en'): Promise<'sarvam' | 'browser' | 'none'> {
+// ---------- speech out: Sarvam TTS when configured (server speaks its own summary of the search), else the
+// browser's voice reading the same text ----------
+export async function speakText(searchId: string, text: string, lang: 'hi' | 'en'): Promise<'sarvam' | 'browser' | 'none'> {
   try {
-    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang }) })
+    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ search_id: searchId }) })
     if (r.ok) {
       const url = URL.createObjectURL(await r.blob())
       const audio = new Audio(url)

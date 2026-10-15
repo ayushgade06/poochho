@@ -2,7 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const applyEvent = vi.fn()
-vi.mock('@/lib/engine', () => ({ applyEvent }))
+const adoptExecution = vi.fn()
+vi.mock('@/lib/engine', () => ({ applyEvent, adoptExecution }))
 const { POST } = await import('@/app/api/bolna/webhook/route')
 
 const SECRET = 'test-webhook-secret-123'
@@ -12,6 +13,7 @@ const call = (body: unknown, headers: Record<string, string> = { 'x-poochho-secr
 
 beforeEach(() => {
   applyEvent.mockReset()
+  adoptExecution.mockReset()
   process.env.BOLNA_WEBHOOK_SECRET = SECRET
   delete process.env.BOLNA_WEBHOOK_IPS
 })
@@ -25,9 +27,16 @@ describe('POST /api/bolna/webhook', () => {
     expect(applyEvent).not.toHaveBeenCalled()
   })
 
-  it('accepts the secret as a query parameter too', async () => {
-    applyEvent.mockResolvedValue({ id: 'x', changed: true })
-    expect((await call(payload, {}, `http://localhost/api/bolna/webhook?secret=${SECRET}`)).status).toBe(200)
+  it('does not accept the secret in the URL (URLs end up in logs)', async () => {
+    expect((await call(payload, {}, `http://localhost/api/bolna/webhook?secret=${SECRET}`)).status).toBe(401)
+  })
+
+  it('adopts a call whose provider id was never stored, via the id echoed in recipient_data', async () => {
+    applyEvent.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'row', changed: true })
+    const ours = '0b8f5c2e-7d1a-4f3b-9c6e-2a1d3e4f5a6b'
+    const res = await call({ ...payload, context_details: { recipient_data: { poochho_execution_id: ours } } })
+    expect(res.status).toBe(200)
+    expect(adoptExecution).toHaveBeenCalledWith(ours, 'exec-1')
   })
 
   it('rejects malformed payloads', async () => {

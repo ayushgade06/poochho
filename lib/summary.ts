@@ -1,5 +1,5 @@
-import { inr, qtyLabel, type Ranked } from './rank'
-import type { Lang, PublicExecution, SearchRequest } from './types'
+import { inr, qtyLabel, rankResults, type Ranked } from './rank'
+import type { Lang, PublicExecution, SearchRequest, SearchState } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
 export type HoldOutcome = 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown'
@@ -40,6 +40,16 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} confirmed they will keep it for you.`)
   if (hold?.outcome === 'declined') out.push(`${hold.shopName} declined to hold it.`)
   return out.join(' ')
+}
+
+// The summary for a whole search, shared by the results page and the TTS route.
+export function searchSummary(s: SearchState) {
+  const quotes = s.executions.filter((e) => e.kind === 'quote')
+  const ranked = rankResults(s.request, quotes.map((e) => ({ id: e.id, shopName: e.shop.name, status: e.status, error: e.error, extracted: e.extracted })))
+  const w = ranked.find((r) => r.winner)
+  const shopId = w && quotes.find((e) => e.id === w.id)?.shop_id
+  const h = shopId ? s.executions.find((e) => e.kind === 'hold' && e.shop_id === shopId) : undefined
+  return summarize(s.request, ranked, s.request.language, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
 }
 
 // WhatsApp share text: only the verified quote the user chooses to share. No phone numbers.

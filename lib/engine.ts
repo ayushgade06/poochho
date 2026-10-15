@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import replays from '@/data/replays.json'
-import { getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
-import { cfg, inCallingWindow } from './config'
+import { BolnaHttpError, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
+import { cfg, inCallingWindow, liveBlockers } from './config'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { DEMO_SHOPS, holdScript, quoteScript } from './sim'
 import { ACTIVE, mergeEvent } from './state'
@@ -86,9 +86,13 @@ export async function createSearch(input: NewSearch) {
     return { ...base, status: 'dispatching', provider_execution_id: pid, dispatched_at: now, script: quoteScript(shop, request, pid) }
   })
   must(await db().from('call_executions').insert(rows))
-  if (input.mode === 'live') await dispatchQueued()
+  // The calls are saved: a dispatch hiccup must not fail the request (a retry would queue them twice).
+  // The page's tick keeps dispatching.
+  if (input.mode === 'live') await dispatchQueued().catch(logDispatchError)
   return request.id
 }
+
+const logDispatchError = (e: unknown) => console.error('dispatch failed (the tick will retry):', (e as Error).message)
 
 type Replay = {
   id: string
@@ -119,12 +123,19 @@ export async function createReplay(replayId: string) {
 
 const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
 
-export async function getSearch(id: string): Promise<SearchState | null> {
+// Real calls with real shopkeepers: without the operator token, transcripts, free-text notes and raw
+// provider errors are withheld. Simulated and replayed calls are fictional and shown in full.
+export async function getSearch(id: string, operator = false): Promise<SearchState | null> {
   const request = must<SearchRequest | null>(await db().from('search_requests').select('*').eq('id', id).maybeSingle())
   if (!request) return null
   const rows = must<Row[]>(await db().from('call_executions').select(PUBLIC_COLS).eq('request_id', id).order('created_at').order('id'))
-  const executions = rows.map(({ shops, ...e }) => ({ ...e, shop: shops })) as PublicExecution[]
-  return { request, executions }
+  const redacted = request.mode === 'live' && !operator
+  const executions = rows.map(({ shops, ...e }) => ({
+    ...e,
+    shop: shops,
+    ...(redacted && { transcript: null, extracted: e.extracted && { ...e.extracted, notes: null }, error: e.error && /^[a-z -]+$/.test(e.error) ? e.error : e.error && 'details hidden' }),
+  })) as PublicExecution[]
+  return { request, executions, redacted }
 }
 
 // ---------- reservation ("Hold it") ----------
@@ -149,45 +160,66 @@ export async function createHold(executionId: string, liveAllowed: boolean) {
   const r = await db().from('call_executions').insert(row).select('id').single()
   if (r.error?.code === '23505') throw new UserError('A hold call for this shop was already placed.')
   if (r.error) throw new Error(r.error.message)
-  if (src.mode === 'live') await dispatchQueued()
+  if (src.mode === 'live') await dispatchQueued().catch(logDispatchError)
   return r.data.id as string
 }
 
 // ---------- live dispatch ----------
 // claim_live_calls (SQL) atomically moves queued live calls to "dispatching" without exceeding the
-// concurrency limit, so a call is dialled at most once even with several dispatchers. Consent and opt-out
-// are re-checked at dial time.
+// concurrency limit, and expires calls queued for over 10 minutes, so a call is dialled at most once even
+// with several dispatchers. LIVE being switched off, the calling window, consent and opt-out are all
+// re-checked here, right before dialling.
 export async function dispatchQueued() {
-  if (!inCallingWindow()) {
-    const queued = must<Row[]>(await db().from('call_executions').select('id').eq('mode', 'live').eq('status', 'queued'))
-    for (const q of queued) await applyEvent({ id: q.id }, { status: '__failed', error_message: `not placed: outside the calling window (${cfg.callWindow} IST)` }, 'dispatch')
-    return
-  }
+  const blocked = liveBlockers()
+  if (blocked.length) return failQueued(`not placed: LIVE calling is disabled (${blocked[0]})`)
+  if (!inCallingWindow()) return failQueued(`not placed: outside the calling window (${cfg.callWindow} IST)`)
   const claimed = must<Row[]>(await db().rpc('claim_live_calls', { max_active: cfg.maxConcurrency }))
   if (!claimed.length) return
   const details = must<Row[]>(await db().from('call_executions').select(`id, kind, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).in('id', claimed.map((c) => c.id)))
-  for (const q of details) {
-    const shop = q.shops as ShopRow
-    const req = q.search_requests as SearchRequest
-    if (!callable(shop)) {
-      await applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: shop is no longer eligible (consent or opt-out)' }, 'dispatch')
-      continue
-    }
-    try {
-      const vars = {
-        shop_name: shop.name,
-        item: req.brand_or_variant ? `${req.product} (${req.brand_or_variant})` : req.product,
-        quantity: `${req.quantity} ${req.unit}`,
-        customer_area: req.area,
-        call_purpose: q.kind === 'hold' ? 'hold' : 'quote',
-      }
-      const pid = await startCall(shop.phone!, vars, req.language, q.kind === 'hold' && process.env.BOLNA_HOLD_AGENT_ID ? process.env.BOLNA_HOLD_AGENT_ID : undefined)
-      must(await db().from('call_executions').update({ provider_execution_id: pid, provider_status: 'queued' }).eq('id', q.id))
-      await logEvent(q.id, 'dispatch', 'queued', { execution_id: pid, kind: q.kind })
-    } catch (e) {
-      await applyEvent({ id: q.id }, { status: '__failed', error_message: `could not start the call: ${(e as Error).message}` }, 'dispatch')
-    }
+  for (const q of details) await dial(q).catch((e) => console.error('dial failed for', q.id, (e as Error).message))
+}
+
+// Only rows still queued: never one a dispatcher has just claimed.
+async function failQueued(reason: string) {
+  const rows = must<Row[]>(await db().from('call_executions').update({ status: 'failed', error: reason, ended_at: new Date().toISOString() }).eq('mode', 'live').eq('status', 'queued').select('id'))
+  await Promise.all(rows.map((r) => logEvent(r.id, 'dispatch', '__failed', { error_message: reason })))
+}
+
+async function dial(q: Row) {
+  const shop = q.shops as ShopRow
+  const req = q.search_requests as SearchRequest
+  if (!callable(shop)) return applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: shop is no longer eligible (consent or opt-out)' }, 'dispatch')
+  const vars = {
+    shop_name: shop.name,
+    item: req.brand_or_variant ? `${req.product} (${req.brand_or_variant})` : req.product,
+    quantity: `${req.quantity} ${req.unit}`,
+    customer_area: req.area,
+    call_purpose: q.kind === 'hold' ? 'hold' : 'quote',
+    poochho_execution_id: q.id, // echoed back in webhooks, so a call can be matched even if storing its id fails
   }
+  let pid: string
+  try {
+    pid = await startCall(shop.phone!, vars, req.language, q.kind === 'hold' && process.env.BOLNA_HOLD_AGENT_ID ? process.env.BOLNA_HOLD_AGENT_ID : undefined)
+  } catch (e) {
+    // Bolna refused (HTTP error): no call was placed. A timeout or network error is ambiguous, because the
+    // call may have gone through, so it stays open (timeout) for a late webhook instead of being called failed.
+    const refused = e instanceof BolnaHttpError
+    return applyEvent({ id: q.id }, { status: refused ? '__failed' : '__timeout', error_message: refused ? `could not start the call: ${(e as Error).message}` : 'Bolna did not confirm the call in time; outcome unknown' }, 'dispatch')
+  }
+  // Bolna accepted the call: from here on it is never marked failed. Keep trying to store its id.
+  for (let i = 0; i < 4; i++) {
+    const r = await db().from('call_executions').update({ provider_execution_id: pid, provider_status: 'queued' }).eq('id', q.id)
+    if (!r.error) break
+    await new Promise((res) => setTimeout(res, 300 * (i + 1)))
+  }
+  await logEvent(q.id, 'dispatch', 'queued', { execution_id: pid, kind: q.kind })
+}
+
+// A webhook for a call whose provider id we failed to store: attach it via our own id (from user_data).
+export async function adoptExecution(ourId: string, providerId: string) {
+  if (!isUuid(ourId)) return
+  const r = await db().from('call_executions').update({ provider_execution_id: providerId }).eq('id', ourId).eq('mode', 'live').is('provider_execution_id', null)
+  if (r.error) throw new Error(r.error.message)
 }
 
 // ---------- applying provider events ----------
@@ -196,13 +228,9 @@ async function logEvent(executionId: string, source: Source, status: string | nu
   if (r.error) console.error('call_events insert failed:', r.error.message)
 }
 
-async function recordOptOut(shopId: string, executionId: string) {
-  const r = await db().from('shops').update({ opted_out_at: new Date().toISOString(), opt_out_note: `Asked not to be called again (call ${executionId})` }).eq('id', shopId).is('opted_out_at', null)
-  if (r.error) throw new Error(r.error.message)
-}
-
 // Merge one event into a call with optimistic concurrency (version check + retry). Idempotent: replays of
-// the same event change nothing. Returns null when no call matches.
+// the same event change nothing. Returns null when no call matches. Opt-outs are recorded by a database
+// trigger in the same write (migration 20261016020000), so they can't be lost between two writes.
 export async function applyEvent(where: { id: string } | { providerId: string }, ev: ProviderEvent, source: Source, payload?: unknown) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const q = db().from('call_executions').select('id, mode, shop_id, provider_execution_id, status, transcript, extracted, duration_seconds, answered_at, ended_at, first_quote_at, version')
@@ -213,8 +241,6 @@ export async function applyEvent(where: { id: string } | { providerId: string },
     if (!patch) return { id: cur.id as string, changed: false }
     const done = must<Row[]>(await db().from('call_executions').update({ ...patch, version: cur.version + 1 }).eq('id', cur.id).eq('version', cur.version).select('id'))
     if (!done.length) continue // lost a race with a concurrent event: re-read and merge again
-    if (patch.extracted?.opt_out === 'yes') await recordOptOut(cur.shop_id, cur.id)
-    if (cur.mode === 'live' && ev.status === 'rescheduled' && cur.provider_execution_id) await stopCall(cur.provider_execution_id).catch(() => null)
     return { id: cur.id as string, changed: true }
   }
   throw new Error('Could not apply event: too many concurrent updates')
@@ -254,22 +280,27 @@ export async function saveLabel(executionId: string, field: string, isCorrect: b
 
 // ---------- the tick: advances one search (client-driven, idempotent, safe to run from several tabs) ----------
 export async function tick(requestId: string) {
-  const rows = must<Row[]>(await db().from('call_executions').select('id, mode, status, script, script_cursor, dispatched_at, provider_execution_id, last_polled_at').eq('request_id', requestId))
+  const rows = must<Row[]>(
+    await db().from('call_executions').select('id, mode, status, provider_status, script, script_cursor, dispatched_at, answered_at, ended_at, provider_execution_id, last_polled_at').eq('request_id', requestId),
+  )
   const now = Date.now()
-  // Calls are independent, so each one's due steps are delivered in parallel (in order within a call).
+  // Calls are independent, so each one's due steps are delivered in parallel (in order within a call). Each
+  // step is claimed by moving the cursor; if delivering it fails, the cursor moves back so it is retried.
   await Promise.all(
     rows.map(async (ex) => {
       const script = ex.script as ScriptEvent[] | null
-      if (!script || !ex.dispatched_at || ex.script_cursor >= script.length) return
+      if (!script || !ex.dispatched_at) return
       const elapsed = now - Date.parse(ex.dispatched_at)
-      let n = ex.script_cursor
-      while (n < script.length && script[n].at <= elapsed) n++
-      if (n === ex.script_cursor) return
-      const claimed = must<Row[]>(await db().from('call_executions').update({ script_cursor: n }).eq('id', ex.id).eq('script_cursor', ex.script_cursor).select('id'))
-      if (!claimed.length) return // another tab delivered these steps
-      for (const step of script.slice(ex.script_cursor, n)) {
-        const ev = toEvent(step.payload)
-        if (ev) await applyEvent({ id: ex.id }, ev, ex.mode === 'replay' ? 'replay' : 'simulated', step.payload)
+      for (let i = ex.script_cursor; i < script.length && script[i].at <= elapsed; i++) {
+        const claimed = must<Row[]>(await db().from('call_executions').update({ script_cursor: i + 1 }).eq('id', ex.id).eq('script_cursor', i).select('id'))
+        if (!claimed.length) return // another tab is delivering these steps
+        try {
+          const ev = toEvent(script[i].payload)
+          if (ev) await applyEvent({ id: ex.id }, ev, ex.mode === 'replay' ? 'replay' : 'simulated', script[i].payload)
+        } catch (e) {
+          await db().from('call_executions').update({ script_cursor: i }).eq('id', ex.id).eq('script_cursor', i + 1)
+          throw e
+        }
       }
     }),
   )
@@ -280,6 +311,15 @@ export async function tick(requestId: string) {
   for (const ex of live) {
     const age = ex.dispatched_at ? now - Date.parse(ex.dispatched_at) : 0
     const watch = ACTIVE.includes(ex.status as CallStatus)
+    // A call Bolna rescheduled (outside its own calling hours) must not happen later: ask it to stop until
+    // Bolna gives a definite answer either way.
+    if (ex.status === 'failed' && ex.provider_status === 'rescheduled' && ex.provider_execution_id && process.env.BOLNA_API_KEY) {
+      const outcome = await stopCall(ex.provider_execution_id).then(
+        () => 'rescheduled-stopped',
+        (e) => (e instanceof BolnaHttpError ? 'rescheduled-stop-refused' : null),
+      )
+      if (outcome) await db().from('call_executions').update({ provider_status: outcome }).eq('id', ex.id)
+    }
     // Poll the provider as a webhook fallback (local dev has no public webhook URL). Keep polling a
     // timed-out call for 30 minutes so a late result can still land.
     const polledRecently = ex.last_polled_at && Date.parse(ex.last_polled_at) > now - 5000
@@ -295,6 +335,8 @@ export async function tick(requestId: string) {
         }
       }
     }
-    if (watch && age > cfg.watchdogSec * 1000) await applyEvent({ id: ex.id }, { status: '__timeout' }, 'watchdog')
+    // Watchdog, measured from the last milestone the provider reported (ended, answered, or dialled).
+    const since = Date.parse(ex.ended_at ?? ex.answered_at ?? ex.dispatched_at ?? new Date(now).toISOString())
+    if (watch && now - since > cfg.watchdogSec * 1000) await applyEvent({ id: ex.id }, { status: '__timeout' }, 'watchdog')
   }
 }

@@ -18,7 +18,13 @@ const must = ({ data, error }) => {
 const req = must(await db.from('search_requests').select('*').eq('id', id).single())
 if (req.mode === 'replay') throw new Error('That search is itself a replay.')
 const calls = must(await db.from('call_executions').select('id, kind, status, dispatched_at, shops(name, area, language)').eq('request_id', id).order('created_at'))
-const mask = (t) => (typeof t === 'string' ? t.replace(/\+?\d[\d\s-]{6,}\d/g, '[number removed]') : t)
+// Masks long digit runs (phone numbers) in every string, at any depth. For real calls, free-text notes are
+// dropped entirely: they can hold anything the shopkeeper said.
+const mask = (v) =>
+  typeof v === 'string' ? v.replace(/\+?\d[\d\s-]{6,}\d/g, '[number removed]')
+  : Array.isArray(v) ? v.map(mask)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !(req.mode === 'live' && /^notes$/i.test(k))).map(([k, x]) => [k, mask(x)]))
+  : v
 
 const out = []
 for (const c of calls) {
@@ -36,9 +42,9 @@ for (const c of calls) {
           id: 'replay',
           status: e.payload.status,
           ...(e.payload.transcript && { transcript: mask(e.payload.transcript) }),
-          ...(e.payload.extracted_data && { extracted_data: e.payload.extracted_data }),
+          ...(e.payload.extracted_data && { extracted_data: mask(e.payload.extracted_data) }),
           ...(e.payload.conversation_duration != null && { conversation_duration: e.payload.conversation_duration }),
-          ...(e.payload.error_message && { error_message: e.payload.error_message }),
+          ...(e.payload.error_message && { error_message: mask(e.payload.error_message) }),
           ...(e.payload.answered_by_voice_mail && { answered_by_voice_mail: true }),
         },
       })),

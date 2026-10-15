@@ -3,6 +3,10 @@ import type { ProviderEvent } from './types'
 // Documented at https://www.bolna.ai/docs/api-reference (base URL, Bearer auth, POST /call, GET /executions/{id}).
 const BASE = 'https://api.bolna.ai'
 
+// Bolna answered with an error status: the request was definitely refused. (A timeout or network error is
+// different: the call may or may not have been placed.)
+export class BolnaHttpError extends Error {}
+
 async function bolna(path: string, init: RequestInit = {}) {
   const res = await fetch(BASE + path, {
     ...init,
@@ -11,7 +15,7 @@ async function bolna(path: string, init: RequestInit = {}) {
     cache: 'no-store',
   })
   const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error(`Bolna ${res.status}: ${typeof body?.message === 'string' ? body.message : res.statusText}`)
+  if (!res.ok) throw new BolnaHttpError(`Bolna ${res.status}: ${typeof body?.message === 'string' ? body.message : res.statusText}`)
   return body
 }
 
@@ -34,15 +38,20 @@ export const getExecution = (id: string) => bolna(`/executions/${encodeURICompon
 export const stopCall = (id: string) => bolna(`/call/${encodeURIComponent(id)}/stop`, { method: 'POST' })
 
 // Bolna execution object (webhook body == GET /executions/{id}) → normalised event. null if malformed.
-export function toEvent(p: unknown): (ProviderEvent & { id: string }) | null {
+// `ourId` is our execution id echoed back in context_details.recipient_data (we send it in user_data), used to
+// match a webhook for a call whose provider id we failed to store.
+export function toEvent(p: unknown): (ProviderEvent & { id: string; ourId: string | null }) | null {
   if (!p || typeof p !== 'object') return null
   const o = p as Record<string, unknown>
   if (typeof o.id !== 'string' || !o.id || typeof o.status !== 'string') return null
   const tel = (o.telephony_data ?? {}) as Record<string, unknown>
+  const ctx = ((o.context_details ?? {}) as Record<string, unknown>).recipient_data as Record<string, unknown> | undefined
+  const ourId = typeof ctx?.poochho_execution_id === 'string' ? ctx.poochho_execution_id : null
   const raw = o.conversation_duration ?? tel.duration // seconds; documented as number or numeric string
   const dur = raw === null || raw === undefined || raw === '' ? NaN : Number(raw)
   return {
     id: o.id,
+    ourId,
     status: o.status,
     transcript: typeof o.transcript === 'string' ? o.transcript : null,
     extracted_data: o.extracted_data && typeof o.extracted_data === 'object' ? o.extracted_data : null,

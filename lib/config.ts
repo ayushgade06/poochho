@@ -9,7 +9,7 @@ export const cfg = {
   maxCalls: int(process.env.MAX_CALLS_PER_REQUEST, 5, 1, 8),
   maxConcurrency: int(process.env.MAX_CONCURRENCY, 8, 1, 50),
   maxLivePerDay: int(process.env.MAX_LIVE_CALLS_PER_DAY, 25, 1, 500),
-  watchdogSec: int(process.env.CALL_WATCHDOG_SECONDS, 300, 60, 3600),
+  watchdogSec: int(process.env.CALL_WATCHDOG_SECONDS, 300, 120, 3600), // never shorter than a 90 s call
   callWindow: /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(process.env.CALL_WINDOW_IST ?? '') ? process.env.CALL_WINDOW_IST! : '09:00-20:00',
 }
 

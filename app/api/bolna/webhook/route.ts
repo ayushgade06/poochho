@@ -1,15 +1,16 @@
 import { toEvent } from '@/lib/bolna'
 import { safeEqual } from '@/lib/config'
-import { applyEvent } from '@/lib/engine'
+import { adoptExecution, applyEvent } from '@/lib/engine'
 
 // Bolna POSTs the full execution object on every status change (several deliveries per call, same `id`).
 // Bolna does not sign webhooks; its documented trust mechanisms are custom headers and source IPs, so we
 // require a shared secret header (set under Agent → Extractions → Webhook → Add headers) and optionally an
-// IP allowlist. Responses: 200 applied/duplicate, 202 unknown call (no retry wanted), 400 malformed,
-// 401/403 rejected, 503 transient failure (Bolna retries non-2xx).
+// IP allowlist. The secret is accepted only as a header, never in the URL (URLs end up in logs).
+// Responses: 200 applied or duplicate, 202 unknown call (no retry wanted), 400 malformed, 401/403 rejected,
+// 503 transient failure (Bolna retries non-2xx).
 export async function POST(req: Request) {
   const secret = process.env.BOLNA_WEBHOOK_SECRET
-  const given = req.headers.get('x-poochho-secret') ?? new URL(req.url).searchParams.get('secret')
+  const given = req.headers.get('x-poochho-secret')
   if (!secret || !given || !safeEqual(given, secret)) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
   const allow = (process.env.BOLNA_WEBHOOK_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
@@ -22,7 +23,12 @@ export async function POST(req: Request) {
   const ev = toEvent(body)
   if (!ev) return Response.json({ error: 'not a Bolna execution payload' }, { status: 400 })
   try {
-    const r = await applyEvent({ providerId: ev.id }, ev, 'webhook', body)
+    let r = await applyEvent({ providerId: ev.id }, ev, 'webhook', body)
+    if (!r && ev.ourId) {
+      // A call Bolna accepted but whose id we never stored: match it by the id we sent in user_data.
+      await adoptExecution(ev.ourId, ev.id)
+      r = await applyEvent({ providerId: ev.id }, ev, 'webhook', body)
+    }
     if (!r) return Response.json({ ok: true, ignored: 'unknown execution' }, { status: 202 })
     return Response.json({ ok: true, changed: r.changed })
   } catch (e) {

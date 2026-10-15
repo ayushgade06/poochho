@@ -364,20 +364,22 @@ type Recognition = { lang: string; interimResults: boolean; onresult: (e: { resu
 function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 'browser'; onText: (t: string) => void }) {
   const [state, setState] = useState<'idle' | 'listening' | 'working' | 'error'>('idle')
   const rec = useRef<MediaRecorder | null>(null)
-  // Browser-only capability: false on the server, real value on the client.
-  const supported = useSyncExternalStore(
+  // Browser-only capability (null on the server). Sarvam needs the operator token; otherwise the browser's own
+  // speech recognition is used when available.
+  const how = useSyncExternalStore(
     noop,
     () => {
       const w = window as unknown as Record<string, unknown>
-      return speech === 'sarvam' ? !!navigator.mediaDevices?.getUserMedia : !!(w.SpeechRecognition || w.webkitSpeechRecognition)
+      if (speech === 'sarvam' && token.get() && typeof navigator.mediaDevices?.getUserMedia === 'function') return 'sarvam'
+      return w.SpeechRecognition || w.webkitSpeechRecognition ? 'browser' : null
     },
-    () => false,
+    () => null,
   )
-  if (!supported) return null
+  if (!how) return null
 
   async function go() {
     if (state === 'listening' && rec.current) return rec.current.stop()
-    if (speech === 'browser') {
+    if (how === 'browser') {
       const w = window as unknown as Record<string, new () => Recognition>
       const r = new (w.SpeechRecognition || w.webkitSpeechRecognition)()
       r.lang = lang === 'hi' ? 'hi-IN' : 'en-IN'
@@ -400,7 +402,7 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
         const fd = new FormData()
         fd.append('audio', new Blob(chunks, { type: mr.mimeType || 'audio/webm' }))
         fd.append('lang', lang)
-        const r = await fetch('/api/stt', { method: 'POST', body: fd }).catch(() => null)
+        const r = await fetch('/api/stt', { method: 'POST', body: fd, headers: { 'x-admin-token': token.get() } }).catch(() => null)
         const d = r && (await r.json().catch(() => null))
         if (r?.ok && d?.transcript) {
           onText(d.transcript)
@@ -417,7 +419,7 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
   return (
     <button type="button" onClick={go} className={`mb-1.5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${state === 'listening' ? 'border-chili bg-chili text-white' : 'border-line bg-white text-ink'}`} aria-live="polite">
       <span aria-hidden>{state === 'listening' ? '■' : '🎙'}</span>
-      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? "Didn't catch that, try again" : `Speak (${speech === 'sarvam' ? 'Sarvam' : 'browser'})`}
+      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? "Didn't catch that, try again" : `Speak (${how === 'sarvam' ? 'Sarvam' : 'browser'})`}
     </button>
   )
 }

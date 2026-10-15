@@ -4,7 +4,7 @@ import type { Extraction } from '@/lib/types'
 
 const req = { quantity: 2, unit: 'packet', max_budget_inr: null, need_within_minutes: null }
 const x = (o: Partial<Extraction> = {}): Extraction => ({
-  in_stock: 'yes', unit_price_inr: null, total_price_inr: null, price_unit: null, qty_available: null, brand_or_variant: null,
+  in_stock: 'yes', unit_price_inr: null, total_price_inr: null, price_unit: 'packet', qty_available: null, brand_or_variant: null,
   pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'unknown', opt_out: 'no', confidence: 'high', notes: null, ...o,
 })
 const row = (id: string, extracted: Extraction | null, status: 'done' | 'failed' = 'done') => ({ id, shopName: `Shop ${id}`, status, error: status === 'failed' ? 'no-answer' : null, extracted })
@@ -54,6 +54,28 @@ describe('rankResults', () => {
     expect(a.comparable).toBe(false)
     expect(a.unit).toBeNull()
     expect(r[0].id).toBe('b')
+  })
+
+  it('never multiplies a per-unit price whose unit was not stated', () => {
+    const r = rankResults({ ...req, quantity: 500, unit: 'g' }, [row('a', x({ unit_price_inr: 120, price_unit: null }))])
+    expect(r[0].total).toBeNull() // not "₹60,000 total"
+    expect(r[0].unit).toBeNull()
+    expect(r[0].factors.price).toBe(0)
+    expect(r[0].flags).toContain('Price unit not stated: not compared')
+    expect(r[0].explanation).toContain('₹120 (unit not stated)')
+    // A quoted total for the requested quantity is used as given, even without a unit.
+    expect(rankResults(req, [row('b', x({ total_price_inr: 540, price_unit: null }))])[0].total).toBe(540)
+  })
+
+  it('does not let an unknown price or readiness pass a budget or deadline', () => {
+    const r = rankResults({ ...req, max_budget_inr: 500, need_within_minutes: 30 }, [row('a', x({ ready_in_minutes: null })), row('b', x({ unit_price_inr: 260, ready_in_minutes: 10 }))])
+    const a = r.find((y) => y.id === 'a')!
+    expect(a.eligible).toBe(false)
+    expect(a.flags).toEqual(expect.arrayContaining(['Price not confirmed against your budget', 'Readiness not confirmed against your deadline']))
+    expect(r.find((y) => y.id === 'b')!.eligible).toBe(false) // ₹520 is over the ₹500 budget
+    expect(winnerReason(r)).toBeNull()
+    const one = rankResults(req, [row('c', x({ unit_price_inr: 100 }))])
+    expect(winnerReason(one)).toMatch(/^Only shop that confirmed everything you asked for/)
   })
 
   it('applies budget and deadline limits', () => {
