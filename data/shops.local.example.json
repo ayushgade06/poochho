@@ -1,0 +1,12 @@
+[
+  {
+    "id": "test-friend-1",
+    "name": "Ayush Test Shop",
+    "phone": "+91XXXXXXXXXX",
+    "area": "Kothrud",
+    "city": "Pune",
+    "language": "hi",
+    "consent_note": "Agreed in person on 2026-10-16 to receive AI test calls for the Poochho demo",
+    "consent_verified_at": "2026-10-16T10:00:00+05:30"
+  }
+]

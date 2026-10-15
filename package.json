@@ -9,7 +9,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.mts"
+    "test:integration": "vitest run --config vitest.integration.mts",
+    "seed:shops": "node --env-file=.env.local scripts/seed-shops.mjs",
+    "replay:export": "node --env-file=.env.local scripts/export-replay.mjs",
+    "bolna": "node --env-file=.env.local scripts/bolna.mjs",
+    "check:secrets": "node --env-file-if-exists=.env.local scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

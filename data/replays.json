@@ -1,1 +1,596 @@
-[]
+[
+  {
+    "id": "run-988510c3",
+    "title": "Sample: 2 packet Amul Butter near Kothrud (recorded from a SIMULATED run)",
+    "source": "simulated",
+    "recorded_at": "2026-10-15T20:34:46.646288+00:00",
+    "request": {
+      "product": "Amul Butter",
+      "brand_or_variant": "500g",
+      "category": "grocery",
+      "quantity": 2,
+      "unit": "packet",
+      "city": "Pune",
+      "area": "Kothrud",
+      "language": "hi",
+      "max_budget_inr": 600,
+      "need_within_minutes": null,
+      "constraints": null
+    },
+    "calls": [
+      {
+        "shop": {
+          "area": "Gandhi Chowk",
+          "name": "New Bharat Stores",
+          "language": "hi"
+        },
+        "kind": "quote",
+        "events": [
+          {
+            "at": 1011,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 1399,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 1773,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 19474,
+            "payload": {
+              "id": "replay",
+              "status": "no-answer"
+            }
+          }
+        ]
+      },
+      {
+        "shop": {
+          "area": "Main Market",
+          "name": "Sharma Kirana Store",
+          "language": "hi"
+        },
+        "kind": "quote",
+        "events": [
+          {
+            "at": 565,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 1318,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 1696,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 2266,
+            "payload": {
+              "id": "replay",
+              "status": "in-progress"
+            }
+          },
+          {
+            "at": 15700,
+            "payload": {
+              "id": "replay",
+              "status": "call-disconnected",
+              "conversation_duration": 0
+            }
+          },
+          {
+            "at": 19066,
+            "payload": {
+              "id": "replay",
+              "status": "completed",
+              "transcript": "assistant: नमस्ते, क्या आप Sharma Kirana Store से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं. क्या आप एक मिनट दे सकते हैं?\nuser: हाँ, बोलिए.\nassistant: क्या आपके पास Amul Butter (500g) है, 2 packet की quantity में?\nuser: हाँ है, 2 packet मिल जाएगा.\nassistant: इस Amul Butter (500g) की कीमत क्या है, रुपये में?\nuser: 2 packet का 200 रुपये लगेगा.\nassistant: क्या आप इसे हमारे customer के लिए रख सकते हैं? कितनी जल्दी ready हो सकता है?\nuser: हाँ रख देंगे, 10 मिनट में ready हो जाएगा.\nassistant: बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.\n",
+              "extracted_data": {
+                "Shop Quote": {
+                  "notes": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "opt_out": {
+                    "objective": "no",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "can_hold": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "in_stock": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "price_unit": {
+                    "objective": null,
+                    "subjective": "packet",
+                    "confidence_label": "High"
+                  },
+                  "qty_available": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "unit_price_inr": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "total_price_inr": {
+                    "objective": null,
+                    "subjective": "200",
+                    "confidence_label": "High"
+                  },
+                  "brand_or_variant": {
+                    "objective": null,
+                    "subjective": "500g",
+                    "confidence_label": "High"
+                  },
+                  "ready_in_minutes": {
+                    "objective": null,
+                    "subjective": "10",
+                    "confidence_label": "High"
+                  },
+                  "pickup_or_delivery": {
+                    "objective": "pickup",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  }
+                }
+              },
+              "conversation_duration": 14
+            }
+          }
+        ]
+      },
+      {
+        "shop": {
+          "area": "Station Road",
+          "name": "Gupta General Stores",
+          "language": "hi"
+        },
+        "kind": "quote",
+        "events": [
+          {
+            "at": 677,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 1041,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 1473,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 5205,
+            "payload": {
+              "id": "replay",
+              "status": "in-progress"
+            }
+          },
+          {
+            "at": 13217,
+            "payload": {
+              "id": "replay",
+              "status": "call-disconnected",
+              "conversation_duration": 0
+            }
+          },
+          {
+            "at": 15816,
+            "payload": {
+              "id": "replay",
+              "status": "completed",
+              "transcript": "assistant: नमस्ते, क्या आप Gupta General Stores से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं. क्या आप एक मिनट दे सकते हैं?\nuser: हाँ, बोलिए.\nassistant: क्या आपके पास Amul Butter (500g) है, 2 packet की quantity में?\nuser: हाँ है, 2 packet मिल जाएगा.\nassistant: इस Amul Butter (500g) की कीमत क्या है, रुपये में?\nuser: 2 packet का 230 रुपये लगेगा.\nassistant: क्या आप इसे हमारे customer के लिए रख सकते हैं? कितनी जल्दी ready हो सकता है?\nuser: देखते हैं, 5 मिनट में ready कर देंगे.\nassistant: बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.\n",
+              "extracted_data": {
+                "Shop Quote": {
+                  "notes": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "opt_out": {
+                    "objective": "no",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "can_hold": {
+                    "objective": "unknown",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "in_stock": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "price_unit": {
+                    "objective": null,
+                    "subjective": "packet",
+                    "confidence_label": "Medium"
+                  },
+                  "qty_available": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "unit_price_inr": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "total_price_inr": {
+                    "objective": null,
+                    "subjective": "230",
+                    "confidence_label": "Medium"
+                  },
+                  "brand_or_variant": {
+                    "objective": null,
+                    "subjective": "500g",
+                    "confidence_label": "Medium"
+                  },
+                  "ready_in_minutes": {
+                    "objective": null,
+                    "subjective": "5",
+                    "confidence_label": "Medium"
+                  },
+                  "pickup_or_delivery": {
+                    "objective": "pickup",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  }
+                }
+              },
+              "conversation_duration": 12
+            }
+          }
+        ]
+      },
+      {
+        "shop": {
+          "area": "Shivaji Nagar",
+          "name": "Patil Provision",
+          "language": "hi"
+        },
+        "kind": "quote",
+        "events": [
+          {
+            "at": 0,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 369,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 772,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 1428,
+            "payload": {
+              "id": "replay",
+              "status": "in-progress"
+            }
+          },
+          {
+            "at": 16529,
+            "payload": {
+              "id": "replay",
+              "status": "call-disconnected",
+              "conversation_duration": 0
+            }
+          },
+          {
+            "at": 19472,
+            "payload": {
+              "id": "replay",
+              "status": "completed",
+              "transcript": "assistant: नमस्ते, क्या आप Patil Provision से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं. क्या आप एक मिनट दे सकते हैं?\nuser: हाँ, बोलिए.\nassistant: क्या आपके पास Amul Butter (500g) है, 2 packet की quantity में?\nuser: अभी सिर्फ 1 packet है.\nassistant: इस Amul Butter (500g) की कीमत क्या है, रुपये में?\nuser: एक packet का 95 रुपये.\nassistant: क्या आप इसे हमारे customer के लिए रख सकते हैं? कितनी जल्दी ready हो सकता है?\nuser: हाँ रख देंगे, 15 मिनट में ready हो जाएगा.\nassistant: बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.\n",
+              "extracted_data": {
+                "Shop Quote": {
+                  "notes": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "opt_out": {
+                    "objective": "no",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "can_hold": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "in_stock": {
+                    "objective": "partial",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "price_unit": {
+                    "objective": null,
+                    "subjective": "packet",
+                    "confidence_label": "High"
+                  },
+                  "qty_available": {
+                    "objective": null,
+                    "subjective": "1",
+                    "confidence_label": "High"
+                  },
+                  "unit_price_inr": {
+                    "objective": null,
+                    "subjective": "95",
+                    "confidence_label": "High"
+                  },
+                  "total_price_inr": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "brand_or_variant": {
+                    "objective": null,
+                    "subjective": "500g",
+                    "confidence_label": "High"
+                  },
+                  "ready_in_minutes": {
+                    "objective": null,
+                    "subjective": "15",
+                    "confidence_label": "High"
+                  },
+                  "pickup_or_delivery": {
+                    "objective": "pickup",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  }
+                }
+              },
+              "conversation_duration": 15
+            }
+          }
+        ]
+      },
+      {
+        "shop": {
+          "area": "MG Road",
+          "name": "Mehta Medical & General",
+          "language": "hi"
+        },
+        "kind": "quote",
+        "events": [
+          {
+            "at": 320,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 1178,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 1594,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 5212,
+            "payload": {
+              "id": "replay",
+              "status": "in-progress"
+            }
+          },
+          {
+            "at": 13247,
+            "payload": {
+              "id": "replay",
+              "status": "call-disconnected",
+              "conversation_duration": 0
+            }
+          },
+          {
+            "at": 15823,
+            "payload": {
+              "id": "replay",
+              "status": "completed",
+              "transcript": "assistant: नमस्ते, क्या आप Mehta Medical & General से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं. क्या आप एक मिनट दे सकते हैं?\nuser: हाँ, बोलिए.\nassistant: क्या आपके पास Amul Butter (500g) है, 2 packet की quantity में?\nuser: हाँ है, 2 packet मिल जाएगा.\nassistant: इस Amul Butter (500g) की कीमत क्या है, रुपये में?\nuser: Price तो counter पे आके पता चलेगा.\nassistant: क्या आप इसे हमारे customer के लिए रख सकते हैं? कितनी जल्दी ready हो सकता है?\nuser: देखते हैं, 20 मिनट में ready कर देंगे.\nassistant: बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.\n",
+              "extracted_data": {
+                "Shop Quote": {
+                  "notes": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "opt_out": {
+                    "objective": "no",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "can_hold": {
+                    "objective": "unknown",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "in_stock": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "price_unit": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "qty_available": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "unit_price_inr": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "total_price_inr": {
+                    "objective": null,
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  },
+                  "brand_or_variant": {
+                    "objective": null,
+                    "subjective": "500g",
+                    "confidence_label": "Medium"
+                  },
+                  "ready_in_minutes": {
+                    "objective": null,
+                    "subjective": "20",
+                    "confidence_label": "Medium"
+                  },
+                  "pickup_or_delivery": {
+                    "objective": "pickup",
+                    "subjective": "",
+                    "confidence_label": "Medium"
+                  }
+                }
+              },
+              "conversation_duration": 11
+            }
+          }
+        ]
+      },
+      {
+        "shop": {
+          "area": "Main Market",
+          "name": "Sharma Kirana Store",
+          "language": "hi"
+        },
+        "kind": "hold",
+        "events": [
+          {
+            "at": 0,
+            "payload": {
+              "id": "replay",
+              "status": "queued"
+            }
+          },
+          {
+            "at": 426,
+            "payload": {
+              "id": "replay",
+              "status": "initiated"
+            }
+          },
+          {
+            "at": 2898,
+            "payload": {
+              "id": "replay",
+              "status": "ringing"
+            }
+          },
+          {
+            "at": 3825,
+            "payload": {
+              "id": "replay",
+              "status": "in-progress"
+            }
+          },
+          {
+            "at": 11906,
+            "payload": {
+              "id": "replay",
+              "status": "call-disconnected",
+              "conversation_duration": 0
+            }
+          },
+          {
+            "at": 14847,
+            "payload": {
+              "id": "replay",
+              "status": "completed",
+              "transcript": "assistant: नमस्ते, मैं Poochho की AI assistant हूँ. थोड़ी देर पहले Amul Butter (500g) के बारे में बात हुई थी. क्या आप 2 packet हमारे customer के लिए रख सकते हैं? वो Kothrud से आ रहे हैं.\nuser: हाँ, रख दिया. आ जाइए.\nassistant: बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.\n",
+              "extracted_data": {
+                "Shop Quote": {
+                  "opt_out": {
+                    "objective": "no",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "can_hold": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "in_stock": {
+                    "objective": "yes",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  },
+                  "pickup_or_delivery": {
+                    "objective": "pickup",
+                    "subjective": "",
+                    "confidence_label": "High"
+                  }
+                }
+              },
+              "conversation_duration": 9
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

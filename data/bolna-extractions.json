@@ -1,0 +1,87 @@
+{
+  "category": "Shop Quote",
+  "dispositions": [
+    {
+      "name": "in_stock",
+      "question": "Did the shopkeeper say the requested item ({{item}}) is available in the requested quantity ({{quantity}})?",
+      "is_objective": true,
+      "objective_options": [
+        { "value": "yes", "condition": "The shopkeeper clearly said they have the item in at least the requested quantity." },
+        { "value": "partial", "condition": "The shopkeeper has the item but only in a smaller quantity, or only with a condition such as paying an advance." },
+        { "value": "no", "condition": "The shopkeeper clearly said the item is not available." },
+        { "value": "unsure", "condition": "Availability was not asked, not answered, or the answer was unclear." }
+      ]
+    },
+    {
+      "name": "unit_price_inr",
+      "question": "What price for ONE unit, in rupees, did the shopkeeper explicitly say? Answer with the number only, for example 270. If the shopkeeper did not say a per-unit price, answer null. Never estimate or calculate a price.",
+      "is_subjective": true,
+      "subjective_type": "numeric"
+    },
+    {
+      "name": "total_price_inr",
+      "question": "What TOTAL price, in rupees, did the shopkeeper explicitly say for the whole requested quantity ({{quantity}})? Number only. If no total was said, answer null. Never estimate or calculate a price.",
+      "is_subjective": true,
+      "subjective_type": "numeric"
+    },
+    {
+      "name": "price_unit",
+      "question": "If the shopkeeper said a per-unit price, which unit was it for: piece, packet, kg, g, litre, ml, strip, bottle, box, dozen or metre? Answer with that one word, or null if no unit was said.",
+      "is_subjective": true,
+      "subjective_type": "text"
+    },
+    {
+      "name": "qty_available",
+      "question": "How many units did the shopkeeper say they have available? Number only. If no number was said, answer null.",
+      "is_subjective": true,
+      "subjective_type": "numeric"
+    },
+    {
+      "name": "brand_or_variant",
+      "question": "Which brand, size or variant did the shopkeeper say they have? A few words only, or null if it was not mentioned.",
+      "is_subjective": true,
+      "subjective_type": "text"
+    },
+    {
+      "name": "pickup_or_delivery",
+      "question": "Did the shopkeeper say the customer should pick the item up, or offer to deliver it?",
+      "is_objective": true,
+      "objective_options": [
+        { "value": "pickup", "condition": "Pickup at the shop was said or agreed." },
+        { "value": "delivery", "condition": "The shopkeeper offered to deliver it." },
+        { "value": "unknown", "condition": "Pickup or delivery was not discussed, or it is unclear." }
+      ]
+    },
+    {
+      "name": "ready_in_minutes",
+      "question": "In how many minutes did the shopkeeper say the item will be ready for the customer? Convert hours to minutes (one hour = 60). If they said it is ready now, answer 0. Number only. If no time, or only a vague time such as 'soon' or 'sometime today', was said, answer null.",
+      "is_subjective": true,
+      "subjective_type": "numeric"
+    },
+    {
+      "name": "can_hold",
+      "question": "Did the shopkeeper explicitly agree to keep the item aside for this customer?",
+      "is_objective": true,
+      "objective_options": [
+        { "value": "yes", "condition": "The shopkeeper clearly agreed to keep or reserve the item for the customer." },
+        { "value": "no", "condition": "The shopkeeper said they cannot keep it aside." },
+        { "value": "unknown", "condition": "Holding was not asked, or the answer was vague, such as 'we will try' or 'come and see'." }
+      ]
+    },
+    {
+      "name": "opt_out",
+      "question": "Did the shopkeeper ask not to be called again, or to be removed from the list?",
+      "is_objective": true,
+      "objective_options": [
+        { "value": "yes", "condition": "The shopkeeper asked not to receive any more calls." },
+        { "value": "no", "condition": "The shopkeeper did not ask to stop calls." }
+      ]
+    },
+    {
+      "name": "notes",
+      "question": "In one short sentence, note any condition the shopkeeper mentioned, such as an advance payment or a time after which the item will be available. Answer null if there was none.",
+      "is_subjective": true,
+      "subjective_type": "text"
+    }
+  ]
+}

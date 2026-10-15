@@ -112,7 +112,7 @@ function HoldButton({ data, executionId, shopName }: { data: SearchState; execut
       {stage === 'confirm' ? (
         <>
           <button className="rounded-xl bg-ink px-5 py-3 font-semibold text-paper" onClick={send}>
-            Yes, {live ? 'place a real call to' : 'simulate a call to'} {shopName}
+            Yes, {live ? 'place a real call to' : data.request.mode === 'replay' ? 'replay the recorded call to' : 'simulate a call to'} {shopName}
           </button>
           <button className="rounded-xl border border-line bg-white px-4 py-3 font-semibold" onClick={() => setStage('idle')}>
             Cancel

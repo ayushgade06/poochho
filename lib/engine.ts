@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import replays from '@/data/replays.json'
 import { getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
 import { cfg, inCallingWindow } from './config'
+import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { DEMO_SHOPS, holdScript, quoteScript } from './sim'
 import { ACTIVE, mergeEvent } from './state'
 import type { CallStatus, Execution, ProviderEvent, PublicExecution, ScriptEvent, SearchRequest, SearchState } from './types'
@@ -153,26 +154,19 @@ export async function createHold(executionId: string, liveAllowed: boolean) {
 }
 
 // ---------- live dispatch ----------
-// Claims queued live calls row by row (a row can only be claimed once, so no double dialling), re-checks
-// consent/opt-out at dial time, and keeps at most cfg.maxConcurrency live calls in flight.
-// ponytail: the in-flight count is read then acted on; two dispatchers racing could exceed the cap by a few.
+// claim_live_calls (SQL) atomically moves queued live calls to "dispatching" without exceeding the
+// concurrency limit, so a call is dialled at most once even with several dispatchers. Consent and opt-out
+// are re-checked at dial time.
 export async function dispatchQueued() {
-  const queued = must<Row[]>(
-    await db().from('call_executions').select(`id, version, kind, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).eq('mode', 'live').eq('status', 'queued').order('created_at').limit(20),
-  )
-  if (!queued.length) return
   if (!inCallingWindow()) {
+    const queued = must<Row[]>(await db().from('call_executions').select('id').eq('mode', 'live').eq('status', 'queued'))
     for (const q of queued) await applyEvent({ id: q.id }, { status: '__failed', error_message: `not placed: outside the calling window (${cfg.callWindow} IST)` }, 'dispatch')
     return
   }
-  const active = await db().from('call_executions').select('id', { count: 'exact', head: true }).eq('mode', 'live').in('status', ['dispatching', 'ringing', 'talking'])
-  if (active.error) throw new Error(active.error.message)
-  let slots = cfg.maxConcurrency - (active.count ?? 0)
-  for (const q of queued) {
-    if (slots <= 0) break
-    const claimed = must<Row[]>(await db().from('call_executions').update({ status: 'dispatching', dispatched_at: new Date().toISOString(), version: q.version + 1 }).eq('id', q.id).eq('version', q.version).eq('status', 'queued').select('id'))
-    if (!claimed.length) continue
-    slots--
+  const claimed = must<Row[]>(await db().rpc('claim_live_calls', { max_active: cfg.maxConcurrency }))
+  if (!claimed.length) return
+  const details = must<Row[]>(await db().from('call_executions').select(`id, kind, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).in('id', claimed.map((c) => c.id)))
+  for (const q of details) {
     const shop = q.shops as ShopRow
     const req = q.search_requests as SearchRequest
     if (!callable(shop)) {
@@ -224,6 +218,38 @@ export async function applyEvent(where: { id: string } | { providerId: string },
     return { id: cur.id as string, changed: true }
   }
   throw new Error('Could not apply event: too many concurrent updates')
+}
+
+// ---------- metrics and manual labels ----------
+export async function metricsRows(mode: string): Promise<MetricRow[]> {
+  const rows = must<Row[]>(
+    await db()
+      .from('call_executions')
+      .select('id, request_id, mode, status, provider_status, error, dispatched_at, answered_at, ended_at, first_quote_at, duration_seconds, extracted, shops(name), search_requests(language, product), result_labels(field, is_correct)')
+      .eq('mode', mode)
+      .eq('kind', 'quote')
+      .order('created_at', { ascending: false })
+      .limit(2000),
+  )
+  return rows.map(({ shops, search_requests, result_labels, ...r }) => ({ ...r, shop: shops?.name ?? '', language: search_requests?.language ?? '', product: search_requests?.product ?? '', labels: result_labels ?? [] }))
+}
+
+export async function labelQueue(mode: string) {
+  return must<Row[]>(
+    await db()
+      .from('call_executions')
+      .select('id, transcript, extracted, created_at, shops(name), search_requests(product, quantity, unit), result_labels(field, is_correct, correct_value)')
+      .eq('mode', mode)
+      .eq('kind', 'quote')
+      .eq('status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(50),
+  )
+}
+
+export async function saveLabel(executionId: string, field: string, isCorrect: boolean, correctValue: string | null) {
+  if (!LABEL_FIELDS.includes(field as (typeof LABEL_FIELDS)[number])) throw new UserError('Unknown field.')
+  must(await db().from('result_labels').upsert({ execution_id: executionId, field, is_correct: isCorrect, correct_value: correctValue?.slice(0, 200) || null }, { onConflict: 'execution_id,field' }))
 }
 
 // ---------- the tick: advances one search (client-driven, idempotent, safe to run from several tabs) ----------
