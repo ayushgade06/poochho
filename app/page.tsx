@@ -1,69 +1,52 @@
-import Image from "next/image";
+import SearchForm from '@/components/SearchForm'
+
+const STEPS = [
+  ['१', 'Tell us what you need', 'Type it or say it. You review every field before anything happens.'],
+  ['२', 'We call the shops at once', 'Our voice agent rings up to 5 nearby shops in parallel, in Hindi or English, about 45 seconds each.'],
+  ['३', 'Compare, then hold it', 'Verified stock, price and readiness, side by side. One tap asks the best shop to keep it for you.'],
+]
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="grid items-start gap-10 lg:grid-cols-12 lg:gap-12">
+      <section className="lg:col-span-6 lg:pt-6" aria-labelledby="pitch">
+        <p className="rise text-sm font-semibold uppercase tracking-[0.2em] text-marigold-deep">Voice AI for the neighbourhood bazaar</p>
+        <h1 id="pitch" className="rise mt-4 font-display text-5xl leading-[1.02] tracking-tight [animation-delay:80ms] sm:text-6xl xl:text-7xl">
+          India&apos;s shops have no inventory API.{' '}
+          <span className="block">
+            The <span className="bg-[linear-gradient(transparent_58%,rgb(240_162_2/0.5)_58%)] box-decoration-clone px-1">phone</span> is the API.
+          </span>
+        </h1>
+        <p className="rise mt-6 max-w-xl text-xl leading-relaxed text-muted [animation-delay:160ms]">
+          Tell Poochho what you need. It calls the shops near you at the same time, then shows who has it, for how much, and how soon.{' '}
+          <span lang="hi" className="text-ink">
+            आप बताइए, हम पूछ लेंगे।
+          </span>
+        </p>
+        <ol className="mt-10 space-y-6">
+          {STEPS.map(([n, title, body], i) => (
+            <li key={n} className="rise flex gap-5" style={{ animationDelay: `${260 + i * 90}ms` }}>
+              <span className="font-display text-5xl leading-none text-marigold" aria-hidden>
+                {n}
+              </span>
+              <div>
+                <h2 className="text-xl font-semibold">{title}</h2>
+                <p className="mt-1 text-muted">{body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <ul className="rise mt-10 flex flex-wrap gap-2 text-sm [animation-delay:560ms]" aria-label="Safeguards">
+          {['Says it is an AI, first sentence', 'Only consenting test shops', 'Never invents a price', 'Opt-outs are permanent'].map((t) => (
+            <li key={t} className="rounded-full border border-line bg-card px-3 py-1.5 text-muted">
+              {t}
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section className="lg:col-span-6" aria-label="Start a search">
+        <SearchForm />
+      </section>
     </div>
-  );
+  )
 }

@@ -17,6 +17,8 @@ describe('rankResults', () => {
     expect(r[0].total).toBe(520)
     expect(r.find((y) => y.id === 'b')!.unit).toBe(280) // total ÷ quantity when only a total was quoted
     expect(winnerReason(r)).toMatch(/^Lowest verified total of 3 priced quotes/)
+    expect(winnerReason(r)).toMatch(/reservation not confirmed\.$/)
+    expect(winnerReason(r, 'confirmed')).toMatch(/confirmed the reservation on a separate call\.$/)
     expect(r.filter((y) => y.winner)).toHaveLength(1)
   })
 

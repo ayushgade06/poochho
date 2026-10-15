@@ -77,9 +77,9 @@ describe('SIMULATED search end to end', () => {
     const s = (await getSearch(id))!
     const sharma = s.executions.find((e) => e.shop_id === 'demo-sharma-kirana')!
     const failed = s.executions.find((e) => e.shop_id === 'demo-new-bharat')!
-    await expect(createHold(failed.id)).rejects.toBeInstanceOf(UserError)
-    await createHold(sharma.id)
-    await expect(createHold(sharma.id)).rejects.toThrow(/already placed/)
+    await expect(createHold(failed.id, false)).rejects.toBeInstanceOf(UserError)
+    await createHold(sharma.id, false)
+    await expect(createHold(sharma.id, false)).rejects.toThrow(/already placed/)
     await fastForward(id)
     await tick(id)
     const hold = (await getSearch(id))!.executions.find((e) => e.kind === 'hold')!

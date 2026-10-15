@@ -1,8 +1,15 @@
 import { inr, type Ranked } from './rank'
-import type { Lang, SearchRequest } from './types'
+import type { Lang, PublicExecution, SearchRequest } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
-type Hold = { shopName: string; outcome: 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown' } | null
+export type HoldOutcome = 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown'
+type Hold = { shopName: string; outcome: HoldOutcome } | null
+
+// A reservation counts as confirmed only when the shop explicitly agreed on the hold call itself.
+export function holdOutcome(h: Pick<PublicExecution, 'status' | 'extracted'>): HoldOutcome {
+  if (h.status === 'done') return h.extracted?.can_hold === 'yes' ? 'confirmed' : h.extracted?.can_hold === 'no' ? 'declined' : 'unknown'
+  return h.status === 'failed' || h.status === 'timeout' ? 'failed' : 'pending'
+}
 
 const money = (n: number) => String(Math.round(n * 100) / 100)
 
@@ -17,10 +24,10 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   const qty = `${req.quantity} ${req.unit}`
 
   if (lang === 'hi') {
-    const out = [`मैंने ${called} दुकानों पर call किया। ${answered} ने जवाब दिया, और ${have} के पास ${req.product} है।`]
+    const out = [`मैंने ${called} ${called === 1 ? 'दुकान' : 'दुकानों'} पर call किया। ${answered} ने जवाब दिया, और ${have} के पास ${req.product} है।`]
     if (w) out.push(`सबसे अच्छा विकल्प: ${w.shopName}${w.total !== null ? `, ${qty} के लिए ${money(w.total)} रुपये` : ', कीमत नहीं बताई'}${ready(w.ready, true)}।`)
     else out.push(`किसी भी दुकान ने पूरे ${qty} की पुष्टि नहीं की।`)
-    if (unanswered) out.push(`${unanswered} दुकानों से बात नहीं हो पाई।`)
+    if (unanswered) out.push(`${unanswered} ${unanswered === 1 ? 'दुकान' : 'दुकानों'} से बात नहीं हो पाई।`)
     if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} ने आपके लिए सामान रखने की पुष्टि की है।`)
     if (hold?.outcome === 'declined') out.push(`${hold.shopName} ने सामान रखने से मना किया।`)
     return out.join(' ')
@@ -35,7 +42,8 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
 }
 
 // WhatsApp share text: only the verified quote the user chooses to share. No phone numbers.
-export function shareText(req: Req, r: Ranked, reserved: boolean) {
+export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, reserved: boolean) {
   const price = r.total !== null ? `${inr(r.total)} for ${req.quantity} ${req.unit}` : 'price not quoted'
-  return `Poochho found ${req.product} at ${r.shopName}: ${price}. ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone; please confirm at the shop.)`
+  const tag = req.mode === 'simulated' ? '[SIMULATED DEMO, not a real shop] ' : req.mode === 'replay' ? '[REPLAY of a recorded run] ' : ''
+  return `${tag}Poochho found ${req.product} at ${r.shopName}: ${price}. ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone; please confirm at the shop.)`
 }

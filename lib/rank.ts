@@ -114,8 +114,8 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
   return ranked
 }
 
-// Why the winner won, from verified facts only.
-export function winnerReason(ranked: Ranked[]) {
+// Why the winner won, from verified facts only. `hold` is the outcome of a separate reservation call, if any.
+export function winnerReason(ranked: Ranked[], hold: 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown' | null = null) {
   const w = ranked.find((r) => r.winner)
   if (!w) return null
   const full = ranked.filter((r) => r.eligible)
@@ -126,6 +126,11 @@ export function winnerReason(ranked: Ranked[]) {
   else if (full.length === 1) bits.push('Only shop that confirmed the full quantity within your limits')
   else bits.push(`Highest score among ${full.length} shops that confirmed the full quantity`)
   if (unpriced) bits.push(`${unpriced} shop${unpriced > 1 ? 's' : ''} did not quote a comparable price`)
-  bits.push(w.factors.hold ? 'shop says it can hold the item (not yet reserved)' : 'reservation not confirmed')
+  bits.push(
+    hold === 'confirmed' ? 'the shop confirmed the reservation on a separate call'
+    : hold === 'declined' ? 'the shop declined to hold it'
+    : w.factors.hold ? 'shop says it can hold the item (not yet reserved)'
+    : 'reservation not confirmed',
+  )
   return bits.join('; ') + '.'
 }

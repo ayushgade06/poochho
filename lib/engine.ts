@@ -18,8 +18,15 @@ export function db() {
   return client
 }
 
-// Errors whose message is safe and useful to show the user (HTTP 400/409).
+// Errors whose message is safe and useful to show the user (HTTP 400).
 export class UserError extends Error {}
+
+export function errorResponse(e: unknown) {
+  if (e instanceof UserError) return Response.json({ error: e.message }, { status: 400 })
+  console.error(e)
+  return Response.json({ error: 'Something went wrong on the server. Please try again.' }, { status: 500 })
+}
+export const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = any // untyped Supabase rows; shapes are fixed by the migration
@@ -120,9 +127,10 @@ export async function getSearch(id: string): Promise<SearchState | null> {
 }
 
 // ---------- reservation ("Hold it") ----------
-export async function createHold(executionId: string) {
+export async function createHold(executionId: string, liveAllowed: boolean) {
   const src = must<Row>(await db().from('call_executions').select('id, request_id, shop_id, kind, mode, status, extracted, search_requests(*)').eq('id', executionId).maybeSingle())
   if (!src) throw new UserError('Unknown call.')
+  if (src.mode === 'live' && !liveAllowed) throw new UserError('A live hold call needs LIVE mode enabled and the operator token.')
   if (src.kind !== 'quote' || src.status !== 'done' || !['yes', 'partial'].includes(src.extracted?.in_stock)) throw new UserError('Only a shop that confirmed stock can be asked to hold it.')
   const req = src.search_requests as SearchRequest
   const base = { request_id: src.request_id, shop_id: src.shop_id, kind: 'hold', mode: src.mode }
@@ -222,20 +230,23 @@ export async function applyEvent(where: { id: string } | { providerId: string },
 export async function tick(requestId: string) {
   const rows = must<Row[]>(await db().from('call_executions').select('id, mode, status, script, script_cursor, dispatched_at, provider_execution_id, last_polled_at').eq('request_id', requestId))
   const now = Date.now()
-  for (const ex of rows) {
-    const script = ex.script as ScriptEvent[] | null
-    if (!script || !ex.dispatched_at || ex.script_cursor >= script.length) continue
-    const elapsed = now - Date.parse(ex.dispatched_at)
-    let n = ex.script_cursor
-    while (n < script.length && script[n].at <= elapsed) n++
-    if (n === ex.script_cursor) continue
-    const claimed = must<Row[]>(await db().from('call_executions').update({ script_cursor: n }).eq('id', ex.id).eq('script_cursor', ex.script_cursor).select('id'))
-    if (!claimed.length) continue // another tab delivered these steps
-    for (const step of script.slice(ex.script_cursor, n)) {
-      const ev = toEvent(step.payload)
-      if (ev) await applyEvent({ id: ex.id }, ev, ex.mode === 'replay' ? 'replay' : 'simulated', step.payload)
-    }
-  }
+  // Calls are independent, so each one's due steps are delivered in parallel (in order within a call).
+  await Promise.all(
+    rows.map(async (ex) => {
+      const script = ex.script as ScriptEvent[] | null
+      if (!script || !ex.dispatched_at || ex.script_cursor >= script.length) return
+      const elapsed = now - Date.parse(ex.dispatched_at)
+      let n = ex.script_cursor
+      while (n < script.length && script[n].at <= elapsed) n++
+      if (n === ex.script_cursor) return
+      const claimed = must<Row[]>(await db().from('call_executions').update({ script_cursor: n }).eq('id', ex.id).eq('script_cursor', ex.script_cursor).select('id'))
+      if (!claimed.length) return // another tab delivered these steps
+      for (const step of script.slice(ex.script_cursor, n)) {
+        const ev = toEvent(step.payload)
+        if (ev) await applyEvent({ id: ex.id }, ev, ex.mode === 'replay' ? 'replay' : 'simulated', step.payload)
+      }
+    }),
+  )
   const live = rows.filter((r) => r.mode === 'live')
   if (!live.length) return
   await dispatchQueued()
@@ -246,7 +257,7 @@ export async function tick(requestId: string) {
     // Poll the provider as a webhook fallback (local dev has no public webhook URL). Keep polling a
     // timed-out call for 30 minutes so a late result can still land.
     const polledRecently = ex.last_polled_at && Date.parse(ex.last_polled_at) > now - 5000
-    if (ex.provider_execution_id && (watch || (ex.status === 'timeout' && age < 1_800_000)) && !polledRecently) {
+    if (process.env.BOLNA_API_KEY && ex.provider_execution_id && (watch || (ex.status === 'timeout' && age < 1_800_000)) && !polledRecently) {
       const claim = must<Row[]>(await db().from('call_executions').update({ last_polled_at: new Date().toISOString() }).eq('id', ex.id).or(`last_polled_at.is.null,last_polled_at.lt."${cutoff}"`).select('id'))
       if (claim.length) {
         try {
