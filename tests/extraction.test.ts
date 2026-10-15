@@ -1,0 +1,66 @@
+import { describe, expect, it } from 'vitest'
+import { isUsableQuote, parseExtraction } from '@/lib/extraction'
+
+describe('parseExtraction', () => {
+  it('accepts objects, JSON strings, { value } wrappers and one level of grouping', () => {
+    expect(parseExtraction({ in_stock: 'yes', unit_price_inr: 40 })?.unit_price_inr).toBe(40)
+    expect(parseExtraction('{"in_stock":"no"}')?.in_stock).toBe('no')
+    expect(parseExtraction({ in_stock: { value: 'partial' }, qty_available: { value: '3' } })).toMatchObject({ in_stock: 'partial', qty_available: 3 })
+    expect(parseExtraction({ shop_quote: { in_stock: 'yes', total_price_inr: '₹1,250' } })?.total_price_inr).toBe(1250)
+  })
+
+  it('reads Bolna dispositions (Category → name → objective/subjective) and derives confidence from provider labels', () => {
+    const d = (objective: string | null, subjective: string, confidence_label = 'High') => ({ objective, subjective, confidence_label, confidence: 0.9 })
+    const x = parseExtraction({
+      'Shop Quote': {
+        'In Stock': d('yes', ''),
+        total_price_inr: d(null, '540'),
+        unit_price_inr: d(null, 'null', 'Medium'), // "null" = not applicable
+        ready_in_minutes: d(null, '10', 'Medium'),
+        can_hold: d('yes', ''),
+        opt_out: d('no', ''),
+        brand_or_variant: d(null, ''), // "" = not found
+      },
+      General: { 'Call Summary': { subjective: 'Shop has butter.' } },
+    })!
+    expect(x).toMatchObject({ in_stock: 'yes', total_price_inr: 540, unit_price_inr: null, ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', brand_or_variant: null, confidence: 'high' })
+    const low = parseExtraction({ Q: { in_stock: d('yes', '', 'Low'), unit_price_inr: d(null, '20') } })!
+    expect(low.confidence).toBe('low')
+    const med = parseExtraction({ Q: { in_stock: d('yes', ''), unit_price_inr: d(null, '20', 'Medium') } })!
+    expect(med.confidence).toBe('med')
+  })
+
+  it('returns null for empty or unrelated payloads', () => {
+    for (const v of [null, undefined, '', 'not json', [], {}, { foo: 1 }]) expect(parseExtraction(v)).toBeNull()
+  })
+
+  it('keeps unclear numbers unknown instead of guessing', () => {
+    const x = parseExtraction({ in_stock: 'yes', unit_price_inr: '500-600', total_price_inr: -5, qty_available: 'a few', ready_in_minutes: 'soon' })!
+    expect([x.unit_price_inr, x.total_price_inr, x.qty_available, x.ready_in_minutes]).toEqual([null, null, null, null])
+    expect(parseExtraction({ in_stock: 'yes', unit_price_inr: 'Rs. 45.5' })!.unit_price_inr).toBe(45.5)
+  })
+
+  it('maps only exact enum values and defaults conservatively', () => {
+    const x = parseExtraction({ in_stock: 'maybe', can_hold: 'sure', pickup_or_delivery: 'both', confidence: 'constructor', opt_out: 'perhaps' })!
+    expect(x).toMatchObject({ in_stock: 'unsure', can_hold: 'unknown', pickup_or_delivery: 'unknown', confidence: 'low', opt_out: 'no' })
+    expect(parseExtraction({ in_stock: true, can_hold: false, confidence: 'Medium', opt_out: 'YES' })).toMatchObject({ in_stock: 'yes', can_hold: 'no', confidence: 'med', opt_out: 'yes' })
+  })
+
+  it('preserves uncertainty when the answer contradicts itself', () => {
+    expect(parseExtraction({ in_stock: 'no', qty_available: 4 })!.in_stock).toBe('unsure')
+  })
+
+  it('treats placeholder strings as missing', () => {
+    expect(parseExtraction({ in_stock: 'yes', brand_or_variant: 'unknown', notes: ' N/A ' })).toMatchObject({ brand_or_variant: null, notes: null })
+  })
+})
+
+describe('isUsableQuote', () => {
+  it('needs availability plus a price, or a clear "not in stock"', () => {
+    expect(isUsableQuote(parseExtraction({ in_stock: 'no' }))).toBe(true)
+    expect(isUsableQuote(parseExtraction({ in_stock: 'yes' }))).toBe(false)
+    expect(isUsableQuote(parseExtraction({ in_stock: 'yes', total_price_inr: 90 }))).toBe(true)
+    expect(isUsableQuote(parseExtraction({ in_stock: 'unsure', unit_price_inr: 90 }))).toBe(false)
+    expect(isUsableQuote(null)).toBe(false)
+  })
+})

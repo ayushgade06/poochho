@@ -1,0 +1,51 @@
+[
+  {
+    "id": "demo-sharma-kirana",
+    "name": "Sharma Kirana Store",
+    "area": "Main Market",
+    "language": "hi",
+    "sim": { "outcome": "quote", "stock": "yes", "priceFactor": 0.96, "ready": 10, "hold": "yes", "confidence": "high", "ringMs": 3200, "talkMs": 14000 }
+  },
+  {
+    "id": "demo-gupta-general",
+    "name": "Gupta General Stores",
+    "area": "Station Road",
+    "language": "hi",
+    "sim": { "outcome": "quote", "stock": "yes", "priceFactor": 1.08, "ready": 5, "hold": "unknown", "confidence": "med", "ringMs": 4500, "talkMs": 12000 }
+  },
+  {
+    "id": "demo-patil-provision",
+    "name": "Patil Provision",
+    "area": "Shivaji Nagar",
+    "language": "hi",
+    "sim": { "outcome": "quote", "stock": "partial", "qty": 1, "priceFactor": 0.9, "ready": 15, "hold": "yes", "confidence": "high", "ringMs": 2600, "talkMs": 15000 }
+  },
+  {
+    "id": "demo-new-bharat",
+    "name": "New Bharat Stores",
+    "area": "Gandhi Chowk",
+    "language": "hi",
+    "sim": { "outcome": "no-answer", "ringMs": 22000 }
+  },
+  {
+    "id": "demo-mehta-general",
+    "name": "Mehta Medical & General",
+    "area": "MG Road",
+    "language": "hi",
+    "sim": { "outcome": "quote", "stock": "yes", "priceFactor": null, "ready": 20, "hold": "unknown", "confidence": "med", "ringMs": 5200, "talkMs": 11000 }
+  },
+  {
+    "id": "demo-balaji-mart",
+    "name": "Balaji Mart",
+    "area": "Old Bazaar",
+    "language": "hi",
+    "sim": { "outcome": "quote", "stock": "no", "confidence": "high", "ringMs": 3800, "talkMs": 7000 }
+  },
+  {
+    "id": "demo-krishna-traders",
+    "name": "Krishna Traders",
+    "area": "Market Yard",
+    "language": "hi",
+    "sim": { "outcome": "busy", "ringMs": 1800 }
+  }
+]
