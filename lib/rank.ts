@@ -38,6 +38,9 @@ export function normUnit(u: string) {
 }
 
 export const inr = (n: number) => '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)
+const PLURAL: Record<string, string> = { piece: 'pieces', packet: 'packets', strip: 'strips', bottle: 'bottles', box: 'boxes', litre: 'litres', metre: 'metres' }
+// "2 packets", "1 packet", "0.5 kg" (English display only; the Hinglish agent variable keeps "2 packet").
+export const qtyLabel = (q: number, unit: string) => `${q} ${q === 1 ? unit : (PLURAL[unit] ?? unit)}`
 
 export function rankResults(req: Req, rows: Input[]): Ranked[] {
   const q = req.quantity
@@ -89,7 +92,7 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     if (x.confidence === 'low') flags.push('Low-confidence answer')
 
     const parts = [
-      stock === 'full' ? `Has all ${q} ${req.unit}` : stock === 'short' ? (x.qty_available !== null ? `Only ${x.qty_available} available` : 'Partial stock') : stock === 'none' ? 'Not in stock' : 'Stock unclear',
+      stock === 'full' ? `Has all ${qtyLabel(q, req.unit)}` : stock === 'short' ? (x.qty_available !== null ? `Only ${x.qty_available} available` : 'Partial stock') : stock === 'none' ? 'Not in stock' : 'Stock unclear',
     ]
     if (stock !== 'none') {
       parts.push(total !== null ? `${inr(total)} total${q !== 1 && unit !== null ? ` (${inr(unit)} each)` : ''}` : unit !== null ? `${inr(unit)} per ${req.unit}` : 'price not quoted')

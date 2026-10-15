@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CATEGORIES, LANGS, UNITS, type Lang } from '@/lib/types'
+import { qtyLabel } from '@/lib/rank'
 import { parseSpokenRequest } from '@/lib/voice'
 import { field, label, ModeBanner, token } from './ui'
 
@@ -241,7 +242,7 @@ export default function SearchForm() {
       <div>
         <p className="text-sm font-semibold uppercase tracking-widest text-muted">Review before we call</p>
         <h2 className="mt-1 font-display text-3xl leading-tight">
-          {f.quantity} {f.unit} · {f.product}
+          {qtyLabel(Number(f.quantity), f.unit)} · {f.product}
           {f.brand_or_variant && <span className="text-muted"> ({f.brand_or_variant})</span>}
         </h2>
         <p className="mt-1 text-muted">

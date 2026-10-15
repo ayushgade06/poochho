@@ -28,10 +28,10 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
               </span>
             </Link>
             <div className="flex items-center gap-1 text-[15px] font-medium">
-              <Link href="/" className="rounded-full px-4 py-2 hover:bg-ink/5">
+              <Link href="/" className="whitespace-nowrap rounded-full px-3 py-2 hover:bg-ink/5 sm:px-4">
                 New search
               </Link>
-              <Link href="/metrics" className="rounded-full px-4 py-2 hover:bg-ink/5">
+              <Link href="/metrics" className="whitespace-nowrap rounded-full px-3 py-2 hover:bg-ink/5 sm:px-4">
                 Metrics
               </Link>
             </div>

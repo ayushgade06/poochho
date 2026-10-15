@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { rankResults } from '@/lib/rank'
+import { qtyLabel, rankResults } from '@/lib/rank'
 import { LANGS, type SearchState } from '@/lib/types'
 import CallCard from './CallCard'
 import Results from './Results'
@@ -108,7 +108,7 @@ export default function SearchView({ id }: { id: string }) {
         <div>
           <p className="text-sm font-semibold uppercase tracking-widest text-muted">Asking {quotes.length} shops</p>
           <h1 className="mt-1 font-display text-4xl leading-tight sm:text-5xl">
-            {req.quantity} {req.unit} · {req.product}
+            {qtyLabel(req.quantity, req.unit)} · {req.product}
             {req.brand_or_variant && <span className="text-muted"> ({req.brand_or_variant})</span>}
           </h1>
           <p className="mt-1 text-lg text-muted">
@@ -117,7 +117,7 @@ export default function SearchView({ id }: { id: string }) {
             {req.max_budget_inr ? ` · budget ₹${req.max_budget_inr}` : ''}
           </p>
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           <p className="font-display text-5xl tabular leading-none">
             {finishedN}
             <span className="text-muted">/{quotes.length}</span>

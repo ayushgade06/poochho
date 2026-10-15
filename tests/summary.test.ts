@@ -15,7 +15,7 @@ const ranked = rankResults(req, [
 
 describe('summarize', () => {
   it('speaks only verified numbers, in English and Hindi', () => {
-    expect(summarize(req, ranked, 'en')).toBe('I called 2 shops. 1 answered and 1 has Amul Butter. Best option: Sharma Kirana, 540 rupees for 2 packet, ready in about 10 minutes. 1 shop could not be reached.')
+    expect(summarize(req, ranked, 'en')).toBe('I called 2 shops. 1 answered and 1 has Amul Butter. Best option: Sharma Kirana, 540 rupees for 2 packets, ready in about 10 minutes. 1 shop could not be reached.')
     const hi = summarize(req, ranked, 'hi', { shopName: 'Sharma Kirana', outcome: 'confirmed' })
     expect(hi).toContain('मैंने 2 दुकानों पर call किया।')
     expect(hi).toContain('1 दुकान से बात नहीं हो पाई।') // singular
@@ -24,7 +24,7 @@ describe('summarize', () => {
 
   it('says so when nobody can fully help', () => {
     const none = rankResults(req, [{ id: 'a', shopName: 'A', status: 'done', error: null, extracted: x({ in_stock: 'no' }) }])
-    expect(summarize(req, none, 'en')).toContain('No shop confirmed all 2 packet.')
+    expect(summarize(req, none, 'en')).toContain('No shop confirmed all 2 packets.')
   })
 })
 
@@ -39,7 +39,7 @@ describe('holdOutcome and shareText', () => {
 
   it('labels simulated results and never includes phone numbers', () => {
     const w = ranked.find((r) => r.winner)!
-    expect(shareText({ ...req, mode: 'simulated' }, w, false)).toMatch(/^\[SIMULATED DEMO, not a real shop\] Poochho found Amul Butter at Sharma Kirana: ₹540 for 2 packet/)
+    expect(shareText({ ...req, mode: 'simulated' }, w, false)).toMatch(/^\[SIMULATED DEMO, not a real shop\] Poochho found Amul Butter at Sharma Kirana: ₹540 for 2 packets/)
     expect(shareText({ ...req, mode: 'live' }, w, true)).toMatch(/^Poochho found .* The shop confirmed it will hold it\./)
     expect(shareText({ ...req, mode: 'live' }, w, true)).not.toMatch(/\+91|\d{10}/)
   })

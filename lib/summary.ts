@@ -1,4 +1,4 @@
-import { inr, type Ranked } from './rank'
+import { inr, qtyLabel, type Ranked } from './rank'
 import type { Lang, PublicExecution, SearchRequest } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
@@ -21,7 +21,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   const unanswered = ranked.filter((r) => r.status === 'failed' || r.status === 'timeout').length
   const w = ranked.find((r) => r.winner)
   const ready = (n: number | null, hi: boolean) => (n === null ? '' : hi ? `, लगभग ${n} मिनट में तैयार` : `, ready in about ${n} minutes`)
-  const qty = `${req.quantity} ${req.unit}`
+  let qty = `${req.quantity} ${req.unit}` // Hinglish keeps "2 packet"
 
   if (lang === 'hi') {
     const out = [`मैंने ${called} ${called === 1 ? 'दुकान' : 'दुकानों'} पर call किया। ${answered} ने जवाब दिया, और ${have} के पास ${req.product} है।`]
@@ -32,6 +32,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
     if (hold?.outcome === 'declined') out.push(`${hold.shopName} ने सामान रखने से मना किया।`)
     return out.join(' ')
   }
+  qty = qtyLabel(req.quantity, req.unit)
   const out = [`I called ${called} shop${called === 1 ? '' : 's'}. ${answered} answered and ${have} ${have === 1 ? 'has' : 'have'} ${req.product}.`]
   if (w) out.push(`Best option: ${w.shopName}${w.total !== null ? `, ${money(w.total)} rupees for ${qty}` : ', price not quoted'}${ready(w.ready, false)}.`)
   else out.push(`No shop confirmed all ${qty}.`)
@@ -43,7 +44,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
 
 // WhatsApp share text: only the verified quote the user chooses to share. No phone numbers.
 export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, reserved: boolean) {
-  const price = r.total !== null ? `${inr(r.total)} for ${req.quantity} ${req.unit}` : 'price not quoted'
+  const price = r.total !== null ? `${inr(r.total)} for ${qtyLabel(req.quantity, req.unit)}` : 'price not quoted'
   const tag = req.mode === 'simulated' ? '[SIMULATED DEMO, not a real shop] ' : req.mode === 'replay' ? '[REPLAY of a recorded run] ' : ''
   return `${tag}Poochho found ${req.product} at ${r.shopName}: ${price}. ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone; please confirm at the shop.)`
 }
