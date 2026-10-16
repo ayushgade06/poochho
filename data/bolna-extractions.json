@@ -78,6 +78,12 @@
       ]
     },
     {
+      "name": "stock_quote",
+      "question": "Copy the shopkeeper's exact words about whether the item ({{item}}) is available, verbatim, in the original language and script, at most 25 words. Copy only words the shopkeeper said, never the assistant's, and never translate, summarise or correct them. Answer null if the shopkeeper said nothing about availability.",
+      "is_subjective": true,
+      "subjective_type": "text"
+    },
+    {
       "name": "notes",
       "question": "In one short sentence, note any condition the shopkeeper mentioned, such as an advance payment or a time after which the item will be available. Answer null if there was none.",
       "is_subjective": true,

@@ -29,13 +29,13 @@ extractions are missing, and how many phone numbers the account has.
 
 Poochho reads Bolna's post-call extractions from `extracted_data`. That object is nested as
 Category → extraction name → `{ objective, subjective, confidence_label }`. Create one category,
-**Shop Quote**, with the 11 extractions in [`data/bolna-extractions.json`](../data/bolna-extractions.json).
+**Shop Quote**, with the 12 extractions in [`data/bolna-extractions.json`](../data/bolna-extractions.json).
 
 **Option A, one command** (uses `POST /dispositions/bulk`, which is atomic: all or nothing):
 
 ```
-npm run bolna -- setup-extractions        # shows what it will create
-npm run bolna -- setup-extractions --yes  # creates them
+npm run bolna -- setup-extractions        # shows which extractions are missing from the agent
+npm run bolna -- setup-extractions --yes  # creates only those (an existing name is never created twice)
 npm run bolna -- test-extraction          # runs them on a sample transcript; no call is placed
 ```
 
@@ -54,6 +54,7 @@ name and prompt exactly from `data/bolna-extractions.json`; the names must match
 | `ready_in_minutes` | Free text | Numeric |
 | `can_hold` | Pre-defined | `yes` · `no` · `unknown` |
 | `opt_out` | Pre-defined | `yes` · `no` |
+| `stock_quote` | Free text | Text: the shopkeeper's exact words about availability |
 | `notes` | Free text | Text |
 
 Poochho accepts only these exact values. Anything else becomes "unsure", "unknown" or empty; it is never guessed.
@@ -66,6 +67,10 @@ was unchanged. The real response is saved in `tests/fixtures/bolna-dispositions-
 `tests/extraction.test.ts`. Each answer carries `objective`, `subjective`, `confidence` (0–1), `confidence_label`,
 `reasoning_*` and `validation`. Bolna's model filled `unit_price_inr` = 270 by dividing the stated 540 total, despite
 the prompt. Poochho therefore takes the unit price from a stated total whenever there is one.
+
+`stock_quote` was added the same night (only the missing one was created). On the sample transcript Bolna returned
+"हाँ है, दो packet मिल जाएगा", the shopkeeper's line verbatim; the saved fixture now includes it. Poochho still shows a
+quote only if it appears word for word in one of the shopkeeper's turns of the call transcript.
 
 ## 3. Webhook
 
@@ -89,7 +94,7 @@ a search page is open, so LIVE mode still works locally without a tunnel. Webhoo
 
 | Where | Setting | Value | Why |
 |---|---|---|---|
-| Agent tab | Welcome message | `data/bolna-welcome.txt`: Devanagari, feminine, says it is an AI | The first live call read "bol raha/rahi hoon" literally, and Roman-letter Hindi set the style for the whole call |
+| Agent tab | Welcome message | `data/bolna-welcome.txt`: Devanagari, feminine, says it is an AI and that the call is recorded | The first live call read "bol raha/rahi hoon" literally, and Roman-letter Hindi set the style for the whole call. The recording notice ("यह call record हो रही है") is what India's DPDP rules expect. It is one agent-level field, not one per language tab |
 | Agent tab | Prompt, **Hindi and English tabs** | `data/bolna-prompt.md` (see §5) | Calls use the per-language prompt. The English one was empty, so a call that switched to English improvised |
 | Languages tab | Move to English when | the caller requested for it | Shopkeepers mix in English words ("already", model numbers); auto-detection flipped the call to the English setup |
 | Languages tab → Voice → Advanced | Hindi voice speed rate | `0.9` | Product names and prices are easier to follow on a phone line |

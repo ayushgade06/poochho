@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { rankResults } from '@/lib/rank'
-import { holdOutcome, shareText, summarize, timeSaved } from '@/lib/summary'
+import { ago, holdOutcome, istTime, shareText, summarize, timeSaved } from '@/lib/summary'
 import type { Extraction } from '@/lib/types'
 
 const req = { product: 'Amul Butter', quantity: 2, unit: 'packet', area: 'Kothrud', max_budget_inr: null, need_within_minutes: null }
 const x = (o: Partial<Extraction>): Extraction => ({
   in_stock: 'yes', unit_price_inr: null, total_price_inr: null, price_unit: null, qty_available: null, brand_or_variant: null,
-  pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: null, ...o,
+  pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: null, stock_quote: null, ...o,
 })
 const ranked = rankResults(req, [
   { id: 'a', shopName: 'Sharma Kirana', status: 'done', error: null, extracted: x({ total_price_inr: 540 }) },
@@ -14,12 +14,15 @@ const ranked = rankResults(req, [
 ])
 
 describe('summarize', () => {
-  it('speaks only verified numbers, in English and Hindi', () => {
-    expect(summarize(req, ranked, 'en')).toBe('I called 2 shops. 1 answered and 1 has Amul Butter. Best option: Sharma Kirana, 540 rupees for 2 packets, ready in about 10 minutes. 1 shop could not be reached.')
+  it('speaks only verified numbers, availability first, in English and Hindi', () => {
+    expect(summarize(req, ranked, 'en')).toBe('I called 2 shops. 1 answered and 1 has Amul Butter. Best option: Sharma Kirana has all 2 packets, ready in about 10 minutes, and says it can keep it for you. Price: 540 rupees in total. 1 shop could not be reached.')
     const hi = summarize(req, ranked, 'hi', { shopName: 'Sharma Kirana', outcome: 'confirmed' })
     expect(hi).toContain('मैंने 2 दुकानों पर call किया।')
+    expect(hi).toContain('सबसे अच्छा विकल्प: Sharma Kirana, उनके पास पूरे 2 packet हैं, लगभग 10 मिनट में तैयार। कुल कीमत 540 रुपये।') // the hold call's answer replaces "can hold"
     expect(hi).toContain('1 दुकान से बात नहीं हो पाई।') // singular
     expect(hi).toContain('Sharma Kirana ने आपके लिए सामान रखने की पुष्टि की है।')
+    const now = rankResults(req, [{ id: 'a', shopName: 'A', status: 'done', error: null, extracted: x({ ready_in_minutes: 0, can_hold: 'no' }) }])
+    expect(summarize(req, now, 'en')).toContain('Best option: A has all 2 packets, ready now. Price not quoted.')
   })
 
   it('says so when nobody can fully help', () => {
@@ -37,11 +40,21 @@ describe('holdOutcome and shareText', () => {
     expect(holdOutcome({ status: 'timeout', extracted: null })).toBe('failed')
   })
 
-  it('labels simulated results and never includes phone numbers', () => {
+  it('labels simulated results, says when the shop answered, and never includes phone numbers', () => {
     const w = ranked.find((r) => r.winner)!
-    expect(shareText({ ...req, mode: 'simulated' }, w, false)).toMatch(/^\[SIMULATED DEMO, not a real shop\] Poochho found Amul Butter at Sharma Kirana: ₹540 for 2 packets/)
-    expect(shareText({ ...req, mode: 'live' }, w, true)).toMatch(/^Poochho found .* The shop confirmed it will hold it\./)
-    expect(shareText({ ...req, mode: 'live' }, w, true)).not.toMatch(/\+91|\d{10}/)
+    const at = '2026-10-16T08:35:00.000Z' // 14:05 IST
+    expect(shareText({ ...req, mode: 'simulated' }, w, false, at)).toBe(
+      '[SIMULATED DEMO, not a real shop] Poochho found Amul Butter at Sharma Kirana: Has all 2 packets · ready in ~10 min · can hold it · ₹540 total (₹270 each). (Quoted by phone as of 14:05 IST; please confirm at the shop.)',
+    )
+    expect(shareText({ ...req, mode: 'live' }, w, true, at)).toMatch(/^Poochho found .* The shop confirmed it will hold it\. \(Quoted by phone as of 14:05 IST/)
+    expect(shareText({ ...req, mode: 'live' }, w, true, at)).not.toMatch(/\+91|\d{10}/)
+    expect(shareText({ ...req, mode: 'replay' }, w, false, at)).not.toContain('as of') // a replay's clock is the playback's
+  })
+
+  it('formats freshness and India time', () => {
+    const t = Date.parse('2026-10-16T08:35:00.000Z')
+    expect([0, 30_000, 6 * 60_000, 3 * 3_600_000, 2 * 86_400_000].map((d) => ago('2026-10-16T08:35:00.000Z', t + d))).toEqual(['just now', 'just now', '6 min ago', '3 h ago', 'on 16 Oct'])
+    expect(istTime('2026-10-16T18:40:00.000Z')).toBe('00:10')
   })
 })
 

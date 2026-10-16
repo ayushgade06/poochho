@@ -6,15 +6,15 @@
       "confidence": 0.95,
       "confidence_label": "High",
       "reasoning_subjective": null,
-      "reasoning_objective": "The shopkeeper confirmed they have the requested item (Amul Butter 500g) in the requested quantity (2 packets).",
+      "reasoning_objective": "The shopkeeper clearly said they have 2 packets available for the requested quantity.",
       "validation": null
     },
     "unit_price_inr": {
       "subjective": "270",
       "objective": null,
-      "confidence": 0.8,
+      "confidence": 0.9,
       "confidence_label": "High",
-      "reasoning_subjective": "The shopkeeper provided the total price for two packets as 540 rupees, so the per-unit price for one packet can be understood as 270 rupees, though it was not explicitly stated as a per-unit price.",
+      "reasoning_subjective": "The shopkeeper mentioned total price 540 INR for 2 packets, implying per unit price 270 INR, not directly stated but can be inferred implicitly.",
       "reasoning_objective": null,
       "validation": {
         "is_valid": true,
@@ -24,9 +24,9 @@
     "total_price_inr": {
       "subjective": "540",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "The shopkeeper explicitly stated the total price for 2 packets as 540 rupees.",
+      "reasoning_subjective": "The shopkeeper explicitly said the total price for two packets is 540 INR.",
       "reasoning_objective": null,
       "validation": {
         "is_valid": true,
@@ -36,18 +36,18 @@
     "price_unit": {
       "subjective": "packet",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "The unit mentioned by the shopkeeper and the customer in the request is 'packet'.",
+      "reasoning_subjective": "The shopkeeper referred to the item in terms of packets, stating availability and price for 2 packets.",
       "reasoning_objective": null,
       "validation": null
     },
     "qty_available": {
       "subjective": "2",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "The shopkeeper confirmed availability of two packets, matching the requested quantity.",
+      "reasoning_subjective": "The shopkeeper explicitly said 'do packet mil jayega' indicating two packets available.",
       "reasoning_objective": null,
       "validation": {
         "is_valid": true,
@@ -57,9 +57,9 @@
     "brand_or_variant": {
       "subjective": "Amul Butter 500g",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "The shopkeeper confirmed availability of the specific brand and size 'Amul Butter 500g' as asked.",
+      "reasoning_subjective": "The item specified by the assistant and confirmed by the shopkeeper is Amul Butter 500g.",
       "reasoning_objective": null,
       "validation": null
     },
@@ -69,15 +69,15 @@
       "confidence": 0.9,
       "confidence_label": "High",
       "reasoning_subjective": null,
-      "reasoning_objective": "The shopkeeper said they would keep the items and have them ready in 10 minutes, implying pickup at the shop rather than delivery.",
+      "reasoning_objective": "The shopkeeper indicated that the butter will be ready in 10 minutes and did not offer delivery, implying pickup.",
       "validation": null
     },
     "ready_in_minutes": {
       "subjective": "10",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "Shopkeeper stated the item will be ready in ten minutes.",
+      "reasoning_subjective": "Shopkeeper explicitly stated the item will be ready in 10 minutes.",
       "reasoning_objective": null,
       "validation": {
         "is_valid": true,
@@ -87,27 +87,36 @@
     "can_hold": {
       "subjective": null,
       "objective": "yes",
-      "confidence": 0.95,
+      "confidence": 1,
       "confidence_label": "High",
       "reasoning_subjective": null,
-      "reasoning_objective": "Shopkeeper explicitly agreed to keep the items aside when asked.",
+      "reasoning_objective": "Shopkeeper explicitly agreed to keep the item reserved for the customer ('hā̃ rakh deṅge').",
       "validation": null
     },
     "opt_out": {
       "subjective": null,
       "objective": "no",
-      "confidence": 0.9,
+      "confidence": 1,
       "confidence_label": "High",
       "reasoning_subjective": null,
-      "reasoning_objective": "There was no request from the shopkeeper to stop calls recorded in the transcript.",
+      "reasoning_objective": "No request from shopkeeper to not call again or to be removed was mentioned.",
       "validation": null
     },
     "notes": {
-      "subjective": "The shopkeeper agreed to keep the requested 2 packets of Amul Butter 500g ready in 10 minutes for the customer, total price 540 INR.",
+      "subjective": "",
       "objective": null,
-      "confidence": 0.95,
+      "confidence": 0,
+      "confidence_label": "Low",
+      "reasoning_subjective": "No additional conditions or notes were mentioned by the shopkeeper.",
+      "reasoning_objective": null,
+      "validation": null
+    },
+    "stock_quote": {
+      "subjective": "हाँ है, दो packet मिल जाएगा",
+      "objective": null,
+      "confidence": 1,
       "confidence_label": "High",
-      "reasoning_subjective": "All information about availability, price, holding, and readiness time was clearly stated by the shopkeeper.",
+      "reasoning_subjective": "The exact words by the shopkeeper confirming availability: 'हाँ है, दो packet मिल जाएगा'.",
       "reasoning_objective": null,
       "validation": null
     }

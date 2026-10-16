@@ -1,15 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { rankResults, winnerReason } from '@/lib/rank'
+import { rankResults, stockOf, WEIGHTS, winnerReason } from '@/lib/rank'
 import type { Extraction } from '@/lib/types'
 
 const req = { quantity: 2, unit: 'packet', max_budget_inr: null, need_within_minutes: null }
 const x = (o: Partial<Extraction> = {}): Extraction => ({
   in_stock: 'yes', unit_price_inr: null, total_price_inr: null, price_unit: 'packet', qty_available: null, brand_or_variant: null,
-  pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'unknown', opt_out: 'no', confidence: 'high', notes: null, ...o,
+  pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'unknown', opt_out: 'no', confidence: 'high', notes: null, stock_quote: null, ...o,
 })
 const row = (id: string, extracted: Extraction | null, status: 'done' | 'failed' = 'done') => ({ id, shopName: `Shop ${id}`, status, error: status === 'failed' ? 'no-answer' : null, extracted })
 
 describe('rankResults', () => {
+  it('puts availability first: ready sooner and able to hold beats a few rupees cheaper', () => {
+    expect(WEIGHTS).toEqual({ stock: 50, ready: 20, hold: 15, price: 15 })
+    const r = rankResults(req, [row('cheap-later', x({ total_price_inr: 520, ready_in_minutes: 60 })), row('ready-holds', x({ total_price_inr: 560, ready_in_minutes: 0, can_hold: 'yes' }))])
+    expect(r[0].id).toBe('ready-holds')
+    expect(r[0].explanation).toBe('Has all 2 packets · ready now · can hold it · ₹560 total (₹280 each)')
+    expect(winnerReason(r)).toMatch(/^Ready soonest of 2 shops with the full quantity; shop says it can hold the item/)
+    expect(stockOf(x({ qty_available: 1 }), 2)).toBe('short')
+    expect(stockOf(x({ in_stock: 'unsure' }), 2)).toBe('unknown')
+  })
+
   it('takes the unit price from a stated total, not a per-unit figure that disagrees with it', () => {
     const r = rankResults(req, [row('a', x({ unit_price_inr: 270, total_price_inr: 500 })), row('b', x({ unit_price_inr: 260 }))])
     expect(r.map((y) => [y.id, y.total, y.unit])).toEqual([['a', 500, 250], ['b', 520, 260]])

@@ -7,6 +7,12 @@ through a Bolna voice agent, asks about stock, price and whether they can hold i
 It also gives a spoken summary in Hindi or English. One tap places a separate call asking the best shop to keep it
 for you.
 
+**Availability first, and every answer has proof.** Packaged goods and medicines carry a printed MRP, so prices barely
+differ between shops; what matters is who has it now, how soon it's ready and whether they'll hold it. Results lead
+with that, price second. Every answer shows the shopkeeper's own words (checked word for word against the call
+transcript, never paraphrased), how fresh it is ("confirmed 6 min ago"), and what the calls cost (from Bolna's own
+per-call charge). The operator can play back the recording of a real call.
+
 Built for the Bolna Buildathon. Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, Supabase Postgres + Realtime,
 Bolna, optional Sarvam speech. **No LLM decides anything**: validation, ranking, explanations and summaries are
 deterministic code. The voice calls and post-call extraction run on Bolna.
@@ -63,6 +69,11 @@ flowchart LR
 - **Realtime without exposing data.** The tables are closed to the publishable key. A trigger broadcasts
   `{execution_id, status}` on a per-search public channel, and the browser refetches through the API. The tick
   response doubles as a polling fallback.
+- **Proof behind every answer.** Bolna's `stock_quote` extraction returns the shopkeeper's words about availability.
+  The server shows a quote only if it appears word for word in one of the shopkeeper's own turns of the transcript
+  (`quoteHeard` in `lib/extraction.ts`), so a paraphrase or an invented line never reaches the screen. Freshness comes
+  from when the call ended. Recordings of LIVE calls are fetched from Bolna at play time and streamed to the operator
+  (`/api/executions/[id]/recording`); the 24-hour link is never stored.
 
 Key files:
 
@@ -115,12 +126,13 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 
 ## Database
 
-Three migrations in `supabase/migrations/`:
+Four migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
 - **`20261016020000_review_fixes.sql`**: an opt-out trigger that records an opt-out in the same write as the
   call update; queue expiry; timeouts counted in concurrency.
+- **`20261016030000_call_cost.sql`**: `call_executions.cost_cents`, what Bolna charged per call in US cents.
 
 Tables:
 
@@ -144,8 +156,12 @@ Apply them with either:
   gets `42501 permission denied` everywhere.
 - There are no user accounts. A search is readable by whoever holds its unguessable URL. The search API never
   returns phone numbers.
-- For LIVE searches, transcripts, free-text notes and raw provider errors are returned only with the operator
-  token. Simulated and replayed calls are fictional and shown in full.
+- For LIVE searches, transcripts, the shopkeeper's quoted words, free-text notes, raw provider errors and Bolna's call
+  id are returned only with the operator token. The call id matters: Bolna's recording endpoint
+  (`/recordings/call/{id}`) answers without authentication. Simulated and replayed calls are fictional and shown in
+  full.
+- Call recordings (LIVE only) are operator-only, fetched from Bolna when played and streamed through; the link is
+  never stored, and `call_events` keeps no recording links.
 - Labels and exports are operator-only.
 - Sarvam STT needs the operator token. Sarvam TTS only speaks the server-computed summary of an existing
   search, so neither can be used as an open proxy on your key.
@@ -160,14 +176,17 @@ Opt-outs live on `shops` and are deliberately **not** deleted.
 
 ## Ranking (deterministic, `lib/rank.ts`)
 
-`score = (stock + price + readiness + hold) × confidence`
+`score = (stock + readiness + hold + price) × confidence`
+
+Availability leads: packaged goods and medicines carry a printed MRP (selling above it is illegal), so price gaps
+between shops are small. To go back to price-led ranking, change `WEIGHTS` in `lib/rank.ts`.
 
 | Factor | Points |
 |---|---|
 | Stock | 50 for the full quantity; up to 20 for partial stock; 0 otherwise |
-| Price | 25 × (cheapest verified unit price ÷ this unit price). A stated total sets the unit price (total ÷ quantity). Unknown price scores 0 |
-| Readiness | 15 if ready now, falling linearly to 0 at two hours. Unknown scores 0 |
-| Hold | 10 if the shop says it can hold the item |
+| Readiness | 20 if ready now, falling linearly to 0 at two hours. Unknown scores 0 |
+| Hold | 15 if the shop says it can hold the item |
+| Price | 15 × (cheapest verified unit price ÷ this unit price). A stated total sets the unit price (total ÷ quantity). Unknown price scores 0 |
 | Confidence | high × 1.0, medium × 0.85, low × 0.6 (from Bolna's extraction confidence labels) |
 
 Rules:
@@ -175,7 +194,8 @@ Rules:
 - Only a shop with the **full quantity**, within budget and deadline, can be the best match.
 - Unknown prices are never treated as zero or as cheapest. Prices quoted for a different unit are not compared.
 - Ties go to the lower total, then faster readiness, higher confidence, then name.
-- Explanations use templates filled only with extracted values.
+- Explanations, the spoken summary and the WhatsApp text say has it / ready in / can hold first, then the price.
+  They use templates filled only with extracted values.
 - A reservation shows as confirmed only when the shop agreed on the separate hold call.
 
 ## Scripts
@@ -183,13 +203,13 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 52 unit tests (validation, extraction, state machine, ranking, summaries, voice parsing, metrics/CSV, webhook route with a mocked engine) |
-| `npm run test:integration` | 15 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
+| `npm test` | 70 unit tests (validation, extraction and the quote check, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, Bolna payload parsing, webhook and recording routes with mocked dependencies) |
+| `npm run test:integration` | 16 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |
 | `npm run replay:export -- <search_id> ["Title"]` | Saves a finished run as a sanitised replay in `data/replays.json` |
-| `npm run bolna -- check \| setup-extractions --yes \| test-extraction` | Bolna account check, extraction setup, and an extraction test without a call |
+| `npm run bolna -- check \| setup-extractions --yes \| test-extraction` | Bolna account check, extraction setup (creates only the ones missing from the agent), and an extraction test without a call |
 
 ## Deploy (Vercel)
 

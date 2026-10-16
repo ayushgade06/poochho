@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useSyncExternalStore } from 'react'
+import { centsToInr } from '@/lib/metrics'
 import { CONFIDENCE, inr, qtyLabel, WEIGHTS, winnerReason, type Ranked } from '@/lib/rank'
 import { holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
 import { VOICE_LANGS, type PublicExecution, type SearchState, type VoiceLang } from '@/lib/types'
-import { speakText, token, voiceLang } from './ui'
+import { Proof, speakText, token, voiceLang } from './ui'
 
 const OUTCOME: Record<HoldOutcome, [string, string]> = {
   confirmed: ['Reservation confirmed by the shop', 'text-kirana'],
@@ -14,7 +15,7 @@ const OUTCOME: Record<HoldOutcome, [string, string]> = {
   unknown: ['Outcome unknown: the shop did not clearly agree', 'text-marigold-deep'],
 }
 
-export default function Results({ data, ranked, holds, finished, sarvam }: { data: SearchState; ranked: Ranked[]; holds: PublicExecution[]; finished: boolean; sarvam: boolean }) {
+export default function Results({ data, ranked, holds, finished, sarvam, now }: { data: SearchState; ranked: Ranked[]; holds: PublicExecution[]; finished: boolean; sarvam: boolean; now: number }) {
   const req = data.request
   const winner = ranked.find((r) => r.winner)
   const byId = new Map(data.executions.map((e) => [e.id, e]))
@@ -32,7 +33,7 @@ export default function Results({ data, ranked, holds, finished, sarvam }: { dat
 
       {winner ? (
         // keyed by shop: a half-confirmed "Hold it" must never carry over to a different winner
-        <WinnerCard key={winner.id} data={data} r={winner} hold={winnerHold} why={winnerReason(ranked, hold?.outcome ?? null)} />
+        <WinnerCard key={winner.id} data={data} r={winner} hold={winnerHold} why={winnerReason(ranked, hold?.outcome ?? null)} now={now} />
       ) : (
         finished && (
           <div className="rounded-2xl border-2 border-dashed border-line bg-card p-6">
@@ -46,16 +47,18 @@ export default function Results({ data, ranked, holds, finished, sarvam }: { dat
       )}
 
       {saved && saved.calls > 1 && saved.sequentialSec > saved.parallelSec && <TimeSaved {...saved} />}
+      {finished && <Cost data={data} />}
 
-      <Ledger data={data} ranked={ranked} holdFor={holdFor} />
+      <Ledger data={data} ranked={ranked} holdFor={holdFor} now={now} />
 
       <Summary searchId={req.id} text={summary} lang={req.language} sarvam={sarvam} />
     </section>
   )
 }
 
-function WinnerCard({ data, r, hold, why }: { data: SearchState; r: Ranked; hold?: PublicExecution; why: string | null }) {
+function WinnerCard({ data, r, hold, why, now }: { data: SearchState; r: Ranked; hold?: PublicExecution; why: string | null; now: number }) {
   const req = data.request
+  const e = data.executions.find((x) => x.id === r.id)!
   const outcome = hold && holdOutcome(hold)
   const reserved = outcome === 'confirmed'
   return (
@@ -68,18 +71,16 @@ function WinnerCard({ data, r, hold, why }: { data: SearchState; r: Ranked; hold
       </div>
       <p className="text-sm font-semibold uppercase tracking-widest text-kirana">Best match</p>
       <h3 className="mt-1 pr-36 font-display text-4xl leading-tight sm:text-5xl">{r.shopName}</h3>
-      <p className="mt-2 text-3xl font-semibold tabular">
-        {r.total !== null ? `${inr(r.total)} for ${qtyLabel(req.quantity, req.unit)}` : 'Price not quoted'}
-        {r.ready !== null && <span className="text-xl font-normal text-muted"> · ready {r.ready === 0 ? 'now' : `in ~${r.ready} min`}</span>}
-      </p>
-      <p className="mt-3 text-lg">{r.explanation}.</p>
-      {why && <p className="mt-1 text-muted">Why: {why}</p>}
+      {/* availability first (has it, how soon, can they hold it), then the price */}
+      <p className="mt-2 text-2xl font-semibold leading-snug tabular sm:text-3xl">{r.explanation}</p>
+      <Proof e={e} now={now} className="mt-3 text-lg" />
+      {why && <p className="mt-2 text-muted">Why: {why}</p>}
       {outcome && <p className={`mt-3 text-lg font-semibold ${OUTCOME[outcome][1]}`}>{OUTCOME[outcome][0]}</p>}
       <div className="mt-6 flex flex-wrap gap-3">
         {!hold && <HoldButton key={r.id} data={data} executionId={r.id} shopName={r.shopName} />}
         <a
           className="inline-flex items-center gap-2 rounded-xl bg-[#1f7a43] px-5 py-3 font-semibold text-white"
-          href={`https://wa.me/?text=${encodeURIComponent(shareText(req, r, reserved))}`}
+          href={`https://wa.me/?text=${encodeURIComponent(shareText(req, r, reserved, e.ended_at))}`}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -131,7 +132,7 @@ function HoldButton({ data, executionId, shopName }: { data: SearchState; execut
   )
 }
 
-function Ledger({ data, ranked, holdFor }: { data: SearchState; ranked: Ranked[]; holdFor: (r: Ranked) => PublicExecution | undefined }) {
+function Ledger({ data, ranked, holdFor, now }: { data: SearchState; ranked: Ranked[]; holdFor: (r: Ranked) => PublicExecution | undefined; now: number }) {
   const req = data.request
   const ex = new Map(data.executions.map((e) => [e.id, e]))
   const muted = (t: string) => <span className="italic text-muted">{t}</span>
@@ -166,6 +167,7 @@ function Ledger({ data, ranked, holdFor }: { data: SearchState; ranked: Ranked[]
                   {r.winner && <span className="ml-2 rounded bg-kirana px-1.5 py-0.5 text-xs font-bold uppercase text-white">Best</span>}
                   <span className="block text-sm text-muted">{r.explanation}</span>
                   {answered && r.flags.some((f) => !r.explanation.startsWith(f)) && <span className="block text-sm text-chili">{r.flags.filter((f) => !r.explanation.startsWith(f)).join(' · ')}</span>}
+                  {answered && <Proof e={e} now={now} className="text-sm" />}
                 </td>
                 <td className="px-3 py-3">{!answered ? muted('not reached') : r.stock === 'full' ? <span className="text-kirana">✓ all {req.quantity}</span> : r.stock === 'short' ? <span className="text-marigold-deep">{x?.qty_available !== null && x?.qty_available !== undefined ? `only ${x.qty_available}` : 'partial'}</span> : r.stock === 'none' ? <span className="text-chili">✕ none</span> : muted('unclear')}</td>
                 <td className="px-3 py-3">{!x || r.stock === 'none' ? muted('—') : !r.comparable ? muted(`per ${x.price_unit}`) : r.unit !== null ? inr(r.unit) : x.unit_price_inr ? muted(`${inr(x.unit_price_inr)}, unit not stated`) : muted('not quoted')}</td>
@@ -188,10 +190,11 @@ function Ledger({ data, ranked, holdFor }: { data: SearchState; ranked: Ranked[]
       <details className="border-t border-rule px-5 py-3 text-sm text-muted">
         <summary className="cursor-pointer font-semibold text-ink">How the score works</summary>
         <p className="mt-2 max-w-3xl leading-relaxed">
-          Score = (stock up to {WEIGHTS.stock} + price up to {WEIGHTS.price} + readiness up to {WEIGHTS.ready} + can-hold {WEIGHTS.hold}) × confidence (high {CONFIDENCE.high}, medium{' '}
-          {CONFIDENCE.med}, low {CONFIDENCE.low}). The cheapest verified unit price gets the full price points and others get points in proportion. Readiness falls from {WEIGHTS.ready} (ready
-          now) to 0 at two hours. Only a shop with the full quantity, within your budget and deadline, can be the best match. Unknown prices score 0 and are never called cheapest. Prices
-          quoted for a different unit are not compared. Ties go to the lower total, then faster readiness, higher confidence, then name.
+          Availability comes first: packaged goods and medicines carry a printed MRP, so prices barely differ between shops. Score = (stock up to {WEIGHTS.stock} + readiness up to{' '}
+          {WEIGHTS.ready} + can-hold {WEIGHTS.hold} + price up to {WEIGHTS.price}) × confidence (high {CONFIDENCE.high}, medium {CONFIDENCE.med}, low {CONFIDENCE.low}). Readiness falls from{' '}
+          {WEIGHTS.ready} (ready now) to 0 at two hours. The cheapest verified unit price gets the full price points and others get points in proportion. Only a shop with the full quantity,
+          within your budget and deadline, can be the best match. Unknown prices score 0 and are never called cheapest. Prices quoted for a different unit are not compared. Ties go to the
+          lower total, then faster readiness, higher confidence, then name.
         </p>
       </details>
     </div>
@@ -201,9 +204,9 @@ function Ledger({ data, ranked, holdFor }: { data: SearchState; ranked: Ranked[]
 function Bars({ f }: { f: Ranked['factors'] }) {
   const parts: [number, number, string, string][] = [
     [f.stock, WEIGHTS.stock, 'bg-kirana', 'stock'],
-    [f.price, WEIGHTS.price, 'bg-marigold', 'price'],
     [f.ready, WEIGHTS.ready, 'bg-indigo', 'ready'],
     [f.hold, WEIGHTS.hold, 'bg-plum', 'hold'],
+    [f.price, WEIGHTS.price, 'bg-marigold', 'price'],
   ]
   return (
     <span className="mt-1 flex h-1.5 w-28 overflow-hidden rounded-full bg-line" title={parts.map(([v, , , n]) => `${n} ${v}`).join(' · ') + ` · ×${f.confidence}`}>
@@ -228,10 +231,27 @@ function TimeSaved({ calls, parallelSec, sequentialSec }: { calls: number; paral
         <span className="font-display text-4xl line-through decoration-chili/60">{mmss(sequentialSec)}</span>
         <span className="block text-sm">the same calls, one by one</span>
       </p>
-      <p className="flex-1 text-lg">
+      <p className="min-w-56 flex-1 text-lg">
         <strong className="text-kirana">{Math.round((1 - parallelSec / sequentialSec) * 100)}% faster</strong> than ringing each shop yourself, and you didn&apos;t have to make a single call.
       </p>
     </div>
+  )
+}
+
+// What the calls cost: Bolna's per-call charge (US cents), shown in rupees. Simulated calls cost nothing.
+function Cost({ data }: { data: SearchState }) {
+  if (data.request.mode === 'simulated') return <p className="text-sm text-muted">Simulated calls: no call credits were used.</p>
+  const costed = data.executions.filter((e) => e.cost_cents !== null)
+  if (!costed.length) return null
+  const cents = costed.reduce((sum, e) => sum + Number(e.cost_cents), 0)
+  return (
+    <p className="text-lg">
+      <strong className="tabular">≈ {inr(centsToInr(cents))}</strong> {data.request.mode === 'replay' ? 'for the recorded search' : 'for this search'}
+      <span className="text-sm text-muted">
+        {' '}
+        · {Math.round(cents * 10) / 10}¢ US in Bolna call charges, {costed.length} call{costed.length === 1 ? '' : 's'}
+      </span>
+    </p>
   )
 }
 

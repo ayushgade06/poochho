@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import replays from '@/data/replays.json'
 import { BolnaHttpError, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
 import { cfg, inCallingWindow, liveBlockers } from './config'
+import { quoteHeard } from './extraction'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { DEMO_SHOPS, holdScript, itemLabel, quoteScript } from './sim'
 import { ACTIVE, mergeEvent } from './state'
@@ -121,21 +122,32 @@ export async function createReplay(replayId: string) {
   return request.id
 }
 
-const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
+const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, cost_cents, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
 
-// Real calls with real shopkeepers: without the operator token, transcripts, free-text notes and raw
-// provider errors are withheld. Simulated and replayed calls are fictional and shown in full.
+// Real calls with real shopkeepers: without the operator token, transcripts, the shopkeeper's quoted words,
+// free-text notes, raw provider errors and Bolna's call id (it unlocks the recording) are withheld. Simulated
+// and replayed calls are fictional and shown in full. A quote is only ever shown if the transcript contains it.
 export async function getSearch(id: string, operator = false): Promise<SearchState | null> {
   const request = must<SearchRequest | null>(await db().from('search_requests').select('*').eq('id', id).maybeSingle())
   if (!request) return null
   const rows = must<Row[]>(await db().from('call_executions').select(PUBLIC_COLS).eq('request_id', id).order('created_at').order('id'))
   const redacted = request.mode === 'live' && !operator
-  const executions = rows.map(({ shops, ...e }) => ({
-    ...e,
-    shop: shops,
-    ...(redacted && { transcript: null, extracted: e.extracted && { ...e.extracted, notes: null }, error: e.error && /^[a-z -]+$/.test(e.error) ? e.error : e.error && 'details hidden' }),
-  })) as PublicExecution[]
+  const executions = rows.map(({ shops, ...e }) => {
+    const x = e.extracted && { ...e.extracted, stock_quote: quoteHeard(e.extracted.stock_quote, e.transcript) ? e.extracted.stock_quote : null }
+    return {
+      ...e,
+      extracted: x,
+      shop: shops,
+      ...(redacted && { transcript: null, provider_execution_id: null, extracted: x && { ...x, notes: null, stock_quote: null }, error: e.error && /^[a-z -]+$/.test(e.error) ? e.error : e.error && 'details hidden' }),
+    }
+  }) as PublicExecution[]
   return { request, executions, redacted }
+}
+
+// Bolna's id for an answered LIVE call, for its recording. Server-side only.
+export async function recordingId(executionId: string) {
+  const r = must<Row | null>(await db().from('call_executions').select('mode, answered_at, provider_execution_id').eq('id', executionId).maybeSingle())
+  return r?.mode === 'live' && r.answered_at && r.provider_execution_id ? (r.provider_execution_id as string) : null
 }
 
 // ---------- reservation ("Hold it") ----------
@@ -233,7 +245,7 @@ async function logEvent(executionId: string, source: Source, status: string | nu
 // trigger in the same write (migration 20261016020000), so they can't be lost between two writes.
 export async function applyEvent(where: { id: string } | { providerId: string }, ev: ProviderEvent, source: Source, payload?: unknown) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const q = db().from('call_executions').select('id, mode, shop_id, provider_execution_id, status, transcript, extracted, duration_seconds, answered_at, ended_at, first_quote_at, version')
+    const q = db().from('call_executions').select('id, mode, shop_id, provider_execution_id, status, transcript, extracted, duration_seconds, cost_cents, answered_at, ended_at, first_quote_at, version')
     const cur = must<Row>(await ('id' in where ? q.eq('id', where.id) : q.eq('provider_execution_id', where.providerId)).maybeSingle())
     if (!cur) return null
     const patch = mergeEvent(cur as Execution, ev, new Date().toISOString())
@@ -251,13 +263,12 @@ export async function metricsRows(mode: string): Promise<MetricRow[]> {
   const rows = must<Row[]>(
     await db()
       .from('call_executions')
-      .select('id, request_id, mode, status, provider_status, error, dispatched_at, answered_at, ended_at, first_quote_at, duration_seconds, extracted, shops(name), search_requests(language, product), result_labels(field, is_correct)')
+      .select('id, request_id, mode, kind, status, provider_status, error, dispatched_at, answered_at, ended_at, first_quote_at, duration_seconds, cost_cents, extracted, shops(name), search_requests(language, product, quantity), result_labels(field, is_correct)')
       .eq('mode', mode)
-      .eq('kind', 'quote')
       .order('created_at', { ascending: false })
       .limit(2000),
   )
-  return rows.map(({ shops, search_requests, result_labels, ...r }) => ({ ...r, shop: shops?.name ?? '', language: search_requests?.language ?? '', product: search_requests?.product ?? '', labels: result_labels ?? [] }))
+  return rows.map(({ shops, search_requests, result_labels, ...r }) => ({ ...r, shop: shops?.name ?? '', language: search_requests?.language ?? '', product: search_requests?.product ?? '', quantity: Number(search_requests?.quantity ?? 0), labels: result_labels ?? [] }))
 }
 
 export async function labelQueue(mode: string) {

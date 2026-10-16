@@ -30,11 +30,12 @@ export const mapStatus = (s: string): CallStatus | null => MAP[s?.toLowerCase?.(
 export const isTerminal = (s: CallStatus) => s === 'done' || s === 'failed'
 export const ACTIVE: CallStatus[] = ['dispatching', 'ringing', 'talking', 'processing']
 
-type State = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'answered_at' | 'ended_at' | 'first_quote_at'>
+type State = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at'>
 
 // Pure merge of one provider event into the stored state. Returns null when nothing changes, which makes
 // duplicate deliveries no-ops. Rules: status only moves forward; done/failed are final; our own "timeout"
-// yields only to a final provider outcome; transcripts only grow; a final ("completed") extraction wins.
+// yields only to a final provider outcome; transcripts, durations and costs only grow; a final ("completed")
+// extraction wins.
 export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
   const patch: Partial<Execution> = {}
   // Bolna: "completed" with conversation_duration 0 means no conversation took place.
@@ -60,6 +61,7 @@ export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
   }
   if (ev.transcript && ev.transcript !== cur.transcript && ev.transcript.length >= (cur.transcript?.length ?? 0)) patch.transcript = ev.transcript
   if (typeof ev.duration === 'number' && ev.duration > (cur.duration_seconds ?? -1)) patch.duration_seconds = ev.duration
+  if (typeof ev.cost === 'number' && ev.cost > (cur.cost_cents ?? -1)) patch.cost_cents = ev.cost
   const x = parseExtraction(ev.extracted_data)
   // Field-by-field: Postgres jsonb reorders keys, so string comparison would call every duplicate a change.
   const same = x && cur.extracted && (Object.keys(x) as (keyof Extraction)[]).every((k) => x[k] === cur.extracted![k])

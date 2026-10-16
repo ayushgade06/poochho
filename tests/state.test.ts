@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { mergeEvent } from '@/lib/state'
 import type { Execution } from '@/lib/types'
 
-type S = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'answered_at' | 'ended_at' | 'first_quote_at'>
-const fresh = (o: Partial<S> = {}): S => ({ status: 'dispatching', transcript: null, extracted: null, duration_seconds: null, answered_at: null, ended_at: null, first_quote_at: null, ...o })
+type S = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at'>
+const fresh = (o: Partial<S> = {}): S => ({ status: 'dispatching', transcript: null, extracted: null, duration_seconds: null, cost_cents: null, answered_at: null, ended_at: null, first_quote_at: null, ...o })
 const T = '2026-10-16T10:00:00.000Z'
 const apply = (s: S, ev: Parameters<typeof mergeEvent>[1]) => ({ ...s, ...(mergeEvent(s, ev, T) ?? {}) }) as S
 const quote = { in_stock: 'yes', unit_price_inr: 270, confidence: 'high' }
@@ -72,6 +72,14 @@ describe('mergeEvent', () => {
     expect(mergeEvent(fresh(), { status: 'balance-low' }, T)?.error).toBe('Bolna wallet balance too low')
     const s = apply(fresh(), { status: 'completed', duration: 28, extracted_data: quote })
     expect(mergeEvent(s, { status: 'call-disconnected', duration: 0 }, T)).toBeNull() // late duplicate must not reset it
+  })
+
+  it('keeps the highest cost Bolna reported, so a stale event cannot lower it', () => {
+    let s = apply(fresh(), { status: 'in-progress', cost: 0 })
+    expect(s.cost_cents).toBe(0)
+    s = apply(s, { status: 'completed', cost: 9, extracted_data: quote })
+    expect(s.cost_cents).toBe(9)
+    expect(mergeEvent(s, { status: 'call-disconnected', cost: 0 }, T)).toBeNull()
   })
 
   it('ignores unknown provider statuses but still merges data', () => {

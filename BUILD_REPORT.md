@@ -7,6 +7,8 @@
 - LIVE calling works end to end. On 2026-10-16 you placed the first real call (one consenting test number,
   electronics). It went through dispatch, polling, extraction and ranking, and the follow-up "Hold it" call was placed
   too. The agent problems it revealed are fixed in the prompt and settings (§6a); a second live call should confirm them.
+- Buildathon milestones (§9): **M1 done** (availability first; the shopkeeper's own words, freshness, recordings and
+  cost behind every answer).
 
 ## 1. Features implemented
 
@@ -61,8 +63,8 @@ the excess is UI and safety checks, which I kept rather than cut.
 
 | Command | Result |
 |---|---|
-| `npm test` (Vitest, 8 files) | **54 passed** |
-| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **15 passed** |
+| `npm test` (Vitest, 10 files) | **70 passed** (after M1) |
+| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **16 passed** (after M1) |
 | `npm run typecheck` | 0 errors |
 | `npm run lint` | 0 problems |
 | `npm run build` | **Succeeds** (Next.js 16.4.1, Turbopack): `/` static; API routes dynamic; `/metrics` and `/search/[id]` partial prerender |
@@ -202,3 +204,38 @@ npm run test:integration
    (sanitised) payloads.
 5. **M2/M4:** five consenting numbers. Then `npm run replay:export -- <search id> "Real run"` for the stage fallback.
 6. Deploy to Vercel (env vars from `.env.example`), set the Bolna webhook URL, and rehearse `DEMO.md`.
+
+The buildathon milestones that followed are in §9.
+
+## 9. Buildathon milestones
+
+### M1: availability first, and every answer has proof (2026-10-16, done)
+
+| Change | Where | How it was verified |
+|---|---|---|
+| Ranking weights are now stock 50, ready 20, hold 15, price 15 (were 50/15/10/25): MRP keeps price gaps small. The best-match card, ledger explanations, spoken summary and WhatsApp text say has it / ready in / can hold first and the price last. **To revert, change `WEIGHTS` in `lib/rank.ts`.** | `lib/rank.ts`, `lib/summary.ts`, `components/Results.tsx` | Unit tests (a shop ready now that can hold beats one a few rupees cheaper; exact wording); browser |
+| `stock_quote` extraction: the shopkeeper's exact words about availability. `setup-extractions` now creates only the extractions missing from the agent. A quote is shown only if it appears word for word in one of the shopkeeper's own turns of the transcript | `data/bolna-extractions.json`, `scripts/bolna.mjs`, `lib/extraction.ts` (`quoteHeard`), `lib/engine.ts` (`getSearch`) | Created on the agent (12 extractions, no duplicates; a re-run creates nothing). A real `test-extraction` returned the sample line verbatim (fixture saved). Unit tests reject paraphrases, translations, the AI's words, partial words and stitched turns. An integration test drops an invented quote |
+| Freshness: "confirmed 6 min ago" on cards, the ledger and the best-match card; the WhatsApp text says "as of HH:MM IST" (not for replays, whose clock is the playback's) | `components/ui.tsx` (`Proof`), `lib/summary.ts` | Unit tests; browser ("confirmed 13 h ago" on the real call) |
+| Recordings: `GET /api/executions/[id]/recording`, operator only. It fetches the audio from Bolna at play time and streams it; the link is never stored. LIVE cards get a play button for the operator; other cards say "Simulated call — no audio" or "Replayed call — no audio" | the route, `lib/bolna.ts` (`getRecording`), `components/CallCard.tsx` | Route unit test. The real first call's recording (313 KB MP3) streamed with the operator token; 401 without it; 404 for a simulated call |
+| Cost per call in a new column `cost_cents` (migration applied in the SQL editor, then checked: numeric, RLS on, `anon`/`authenticated` can't read). The results page shows "≈ ₹X for this search"; `/metrics` (LIVE) shows cost per answered call and per successful search | `supabase/migrations/20261016030000_call_cost.sql`, `lib/bolna.ts`, `lib/state.ts`, `lib/metrics.ts`, `app/metrics/page.tsx` | Unit tests (cost only grows; metric definitions); integration test (a webhook's cost lands in the column). The two real calls were backfilled from Bolna: `/metrics?mode=live` shows ≈ ₹8.28 per answered call and ≈ ₹13.8 per successful search (n = 1, flagged as insufficient) |
+| Recording notice in the welcome message: "यह call record हो रही है" (DPDP expects a notice) | Bolna agent (API PATCH of `agent_config.agent_welcome_message`), `data/bolna-welcome.txt`, `lib/sim.ts` | `npm run bolna -- check`: welcome message and both prompt tabs match the files; 12 extractions, none missing. The dashboard shows the new text |
+
+Checks run: `npm run typecheck`, `npm run lint`, `npm test` (70), `npm run test:integration` (16), `npm run build`, then
+`next start` on port 3100 for the browser check at desktop width and 390 px (the running dev server's render worker
+had crashed with "Jest worker encountered 2 child process exceptions"; it was left alone), `npm run check:secrets`.
+
+**Findings worth knowing.**
+
+- **Cost units and which field.** Bolna reports costs in US cents: the wallet's 500 is the $5 trial credit (the
+  dashboard shows $4.85 now). On the two real calls the wallet dropped by exactly Σ `total_cost` = 9 + 6 = 15¢, while
+  Σ `cost_breakdown.total_cost_to_deduct` was 5.5¢ (both executions say `billing_settled: false`). Bolna's docs say to
+  reconcile against `total_cost_to_deduct`; the wallet says otherwise, so Poochho stores `total_cost`. Rupees use ₹92
+  per dollar, the rate on Bolna's own pricing page (6.00¢ = ₹5.52 a minute). Re-check once billing settles.
+- **Recordings need no authentication.** `GET https://api.bolna.ai/recordings/call/{id}` answers with a 307 to a
+  pre-signed S3 link (`audio/mpeg`, valid about 24 h) whether or not the API key is sent. So Bolna's call id is a key
+  to the recording, and the search API used to return it to anyone holding a LIVE search's URL. It is now
+  operator-only, like transcripts.
+- **The welcome message is one agent-level field**, not one per language tab: English-language calls also open with
+  it, in Hindi. M3 (Marathi) has to account for this.
+- The prompt has no FAQ for "why is this call recorded?"; the agent would give its "I don't have that information"
+  line. It will be added with the M2 prompt edit, which touches both tabs anyway.

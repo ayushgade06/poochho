@@ -1,7 +1,8 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { VOICE_LANGS, type CallStatus, type Mode, type VoiceLang } from '@/lib/types'
+import { ago } from '@/lib/summary'
+import { VOICE_LANGS, type CallStatus, type Mode, type PublicExecution, type VoiceLang } from '@/lib/types'
 
 // ---------- mode banners: SIMULATED, REPLAY and LIVE never look alike ----------
 export function ModeBanner({ mode, replaySource, recordedAt }: { mode: Mode; replaySource?: 'live' | 'simulated'; recordedAt?: string }) {
@@ -75,6 +76,26 @@ export function reason(error: string | null) {
   if (!error) return null
   for (const [re, text] of REASONS) if (re.test(error)) return text || error.replace(/^not placed: /, 'Not placed: ')
   return error.charAt(0).toUpperCase() + error.slice(1)
+}
+
+// ---------- proof behind an answer: the shopkeeper's own words and how fresh they are ----------
+// The server sends a quote only if the transcript contains it word for word. A replay's timestamps are from the
+// playback, not from when the shop answered, so it shows no age (its banner carries the recording date).
+export function Proof({ e, now, className = '' }: { e: PublicExecution; now: number; className?: string }) {
+  const quote = e.status === 'done' ? e.extracted?.stock_quote : null
+  const at = e.status === 'done' && e.mode !== 'replay' && now > 0 ? (e.ended_at ?? e.first_quote_at) : null
+  if (!quote && !at) return null
+  return (
+    <p className={className}>
+      {quote && (
+        <q lang={e.shop.language} className="italic">
+          {quote}
+        </q>
+      )}
+      {quote && at && <span className="text-muted"> · </span>}
+      {at && <span className="whitespace-nowrap text-muted">confirmed {ago(at, now)}</span>}
+    </p>
+  )
 }
 
 // ---------- operator token (privileged actions); kept for this browser tab only ----------

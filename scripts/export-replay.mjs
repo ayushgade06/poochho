@@ -1,7 +1,7 @@
 // Saves a finished run as a sanitised REPLAY in data/replays.json.
 // Run: npm run replay:export -- <search_request_id> ["Title"]
-// Keeps statuses, timing, transcripts and extractions; drops phone numbers, provider ids and recording links,
-// and masks long digit runs in transcripts.
+// Keeps statuses, timing, transcripts, extractions and each call's cost; drops phone numbers, provider ids and
+// recording links, and masks long digit runs in transcripts.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
@@ -44,6 +44,7 @@ for (const c of calls) {
           ...(e.payload.transcript && { transcript: mask(e.payload.transcript) }),
           ...(e.payload.extracted_data && { extracted_data: mask(e.payload.extracted_data) }),
           ...(e.payload.conversation_duration != null && { conversation_duration: e.payload.conversation_duration }),
+          ...(e.payload.total_cost != null && { total_cost: e.payload.total_cost }), // US cents, so a replay of a real run shows its cost
           ...(e.payload.error_message && { error_message: mask(e.payload.error_message) }),
           ...(e.payload.answered_by_voice_mail && { answered_by_voice_mail: true }),
         },

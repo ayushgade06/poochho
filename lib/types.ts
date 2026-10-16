@@ -33,6 +33,7 @@ export type Extraction = {
   opt_out: 'yes' | 'no'
   confidence: 'high' | 'med' | 'low'
   notes: string | null
+  stock_quote: string | null // the shopkeeper's own words about availability; shown only if found in the transcript
 }
 
 export type SearchRequest = {
@@ -70,6 +71,7 @@ export type ProviderEvent = {
   duration?: number | null
   error_message?: string | null
   answered_by_voice_mail?: boolean | null
+  cost?: number | null // US cents (Bolna total_cost)
 }
 // SIMULATED/REPLAY step: a Bolna-shaped execution payload delivered `at` ms after dispatch.
 export type ScriptEvent = { at: number; payload: Record<string, unknown> }
@@ -88,6 +90,7 @@ export type Execution = {
   extracted: Extraction | null
   raw_extracted: unknown
   duration_seconds: number | null
+  cost_cents: number | null // what Bolna charged, in US cents
   script: ScriptEvent[] | null
   script_cursor: number
   version: number

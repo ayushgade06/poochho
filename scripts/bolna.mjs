@@ -1,6 +1,6 @@
 // Bolna helper. Run with: npm run bolna -- <check | setup-extractions --yes | test-extraction>
 //   check              read-only: key, wallet, concurrency, agent, prompt variables, extractions, numbers
-//   setup-extractions  creates the "Shop Quote" extractions (data/bolna-extractions.json) on your agent
+//   setup-extractions  creates the "Shop Quote" extractions (data/bolna-extractions.json) missing from your agent
 //   test-extraction    runs the extractions on a sample transcript (POST .../dispositions/test, no call placed)
 import { readFileSync } from 'node:fs'
 
@@ -18,6 +18,12 @@ async function api(path, init = {}) {
 }
 const spec = JSON.parse(readFileSync(new URL('../data/bolna-extractions.json', import.meta.url), 'utf8'))
 const ours = spec.dispositions.map((d) => d.name)
+// Names of the extractions already on the agent. With agent_id the API answers { agent_dispositions,
+// global_dispositions }, not the array its docs show.
+async function existing() {
+  const d = await api(`/dispositions/?agent_id=${AGENT}`)
+  return (Array.isArray(d) ? d : [...(d.agent_dispositions ?? []), ...(d.global_dispositions ?? [])]).map((x) => x.name)
+}
 
 if (cmd === 'check') {
   const me = await api('/user/me')
@@ -40,22 +46,24 @@ if (cmd === 'check') {
   console.log(`  welcome message matches data/bolna-welcome.txt: ${norm(agent.agent_welcome_message) === repo('bolna-welcome.txt') ? 'yes' : 'NO'}`)
   if (ml?.enabled) console.log(`  language switching: ${ml.language_switch_trigger}${ml.language_switch_trigger === 'caller_requested' ? '' : ' (set "the caller requested for it", Languages tab)'}`)
   console.log(`  webhook URL set: ${agent.agent_config?.webhook_url ?? agent.webhook_url ? 'yes' : 'not visible via API (check the Extractions tab)'}`)
-  const dispositions = await api(`/dispositions/?agent_id=${AGENT}`).catch((e) => (console.log(`  extractions: ${e.message}`), null))
-  if (dispositions) {
-    // With agent_id the API answers { agent_dispositions, global_dispositions }, not the array its docs show.
-    const list = Array.isArray(dispositions) ? dispositions : [...(dispositions.agent_dispositions ?? []), ...(dispositions.global_dispositions ?? [])]
-    const names = list.map((d) => d.name)
-    console.log(`  extractions configured: ${names.length}; missing from Poochho's set: ${ours.filter((n) => !names.includes(n)).join(', ') || 'none'}`)
-  }
+  const names = await existing().catch((e) => (console.log(`  extractions: ${e.message}`), null))
+  if (names) console.log(`  extractions configured: ${names.length}; missing from Poochho's set: ${ours.filter((n) => !names.includes(n)).join(', ') || 'none'}`)
   const numbers = await api('/phone-numbers/all').catch(() => [])
   console.log(`Phone numbers on the account: ${Array.isArray(numbers) ? numbers.length : 'unknown'}`)
 } else if (cmd === 'setup-extractions') {
-  if (flag !== '--yes') {
-    console.log(`This will create ${ours.length} extractions in category "${spec.category}" on agent ${AGENT}:\n  ${ours.join(', ')}\nRe-run with --yes to proceed.`)
+  // Only the missing ones: creating an existing name again would give the agent a duplicate.
+  const have = await existing()
+  const missing = spec.dispositions.filter((d) => !have.includes(d.name))
+  if (!missing.length) {
+    console.log(`All ${ours.length} extractions already exist on agent ${AGENT}.`)
     process.exit(0)
   }
-  const r = await api('/dispositions/bulk', { method: 'POST', body: JSON.stringify({ agent_id: AGENT, dispositions: spec.dispositions.map((d) => ({ ...d, category: spec.category })) }) })
-  console.log(`Created ${r.ids?.length ?? 0} extractions.`)
+  if (flag !== '--yes') {
+    console.log(`This will create ${missing.length} missing extraction(s) in category "${spec.category}" on agent ${AGENT}:\n  ${missing.map((d) => d.name).join(', ')}\nRe-run with --yes to proceed.`)
+    process.exit(0)
+  }
+  const r = await api('/dispositions/bulk', { method: 'POST', body: JSON.stringify({ agent_id: AGENT, dispositions: missing.map((d) => ({ ...d, category: spec.category })) }) })
+  console.log(`Created ${r.ids?.length ?? 0} extraction(s): ${missing.map((d) => d.name).join(', ')}.`)
 } else if (cmd === 'test-extraction') {
   const transcript = [
     'assistant: नमस्ते, क्या आप Sharma Kirana Store से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं.',
@@ -69,7 +77,7 @@ if (cmd === 'check') {
   ].join('\n')
   const r = await api(`/v2/agent/${AGENT}/dispositions/test`, { method: 'POST', body: JSON.stringify({ transcript, call_date: new Date().toISOString().slice(0, 19) }) })
   console.log(JSON.stringify(r.extracted_data ?? r, null, 2))
-  console.log('Expected: in_stock yes, total_price_inr 540, ready_in_minutes 10, can_hold yes. Compare with lib/extraction.ts parsing in tests/extraction.test.ts.')
+  console.log('Expected: in_stock yes, total_price_inr 540, ready_in_minutes 10, can_hold yes, stock_quote "हाँ है, दो packet मिल जाएगा". Compare with lib/extraction.ts parsing in tests/extraction.test.ts.')
 } else {
   console.log('Usage: npm run bolna -- <check | setup-extractions [--yes] | test-extraction>')
 }

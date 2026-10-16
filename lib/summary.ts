@@ -1,4 +1,4 @@
-import { inr, qtyLabel, rankResults, type Ranked } from './rank'
+import { qtyLabel, rankResults, type Ranked } from './rank'
 import type { Lang, PublicExecution, SearchRequest, SearchState } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
@@ -14,18 +14,20 @@ export function holdOutcome(h: Pick<PublicExecution, 'status' | 'extracted'>): H
 const money = (n: number) => String(Math.round(n * 100) / 100)
 
 // Spoken/visible summary in the user's language. Every number comes from a verified, extracted answer.
+// Availability first (has it, how soon, can they keep it), then the price.
 export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = null) {
   const called = ranked.length
   const answered = ranked.filter((r) => r.status === 'done').length
   const have = ranked.filter((r) => r.stock === 'full' || r.stock === 'short').length
   const unanswered = ranked.filter((r) => r.status === 'failed' || r.status === 'timeout').length
   const w = ranked.find((r) => r.winner)
-  const ready = (n: number | null, hi: boolean) => (n === null ? '' : hi ? `, लगभग ${n} मिनट में तैयार` : `, ready in about ${n} minutes`)
+  const ready = (n: number | null, hi: boolean) => (n === null ? '' : n === 0 ? (hi ? ', अभी तैयार' : ', ready now') : hi ? `, लगभग ${n} मिनट में तैयार` : `, ready in about ${n} minutes`)
+  const canHold = w && w.factors.hold > 0 && !hold // once a hold call exists, its outcome is reported instead
   let qty = `${req.quantity} ${req.unit}` // Hinglish keeps "2 packet"
 
   if (lang === 'hi') {
     const out = [`मैंने ${called} ${called === 1 ? 'दुकान' : 'दुकानों'} पर call किया। ${answered} ने जवाब दिया, और ${have} के पास ${req.product} है।`]
-    if (w) out.push(`सबसे अच्छा विकल्प: ${w.shopName}${w.total !== null ? `, ${qty} के लिए ${money(w.total)} रुपये` : ', कीमत नहीं बताई'}${ready(w.ready, true)}।`)
+    if (w) out.push(`सबसे अच्छा विकल्प: ${w.shopName}, उनके पास पूरे ${qty} हैं${ready(w.ready, true)}${canHold ? ', और वे इसे आपके लिए रख सकते हैं' : ''}। ${w.total !== null ? `कुल कीमत ${money(w.total)} रुपये।` : 'कीमत नहीं बताई।'}`)
     else out.push(`किसी भी दुकान ने पूरे ${qty} की पुष्टि नहीं की।`)
     if (unanswered) out.push(`${unanswered} ${unanswered === 1 ? 'दुकान' : 'दुकानों'} से बात नहीं हो पाई।`)
     if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} ने आपके लिए सामान रखने की पुष्टि की है।`)
@@ -34,7 +36,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   }
   qty = qtyLabel(req.quantity, req.unit)
   const out = [`I called ${called} shop${called === 1 ? '' : 's'}. ${answered} answered and ${have} ${have === 1 ? 'has' : 'have'} ${req.product}.`]
-  if (w) out.push(`Best option: ${w.shopName}${w.total !== null ? `, ${money(w.total)} rupees for ${qty}` : ', price not quoted'}${ready(w.ready, false)}.`)
+  if (w) out.push(`Best option: ${w.shopName} has all ${qty}${ready(w.ready, false)}${canHold ? ', and says it can keep it for you' : ''}. ${w.total !== null ? `Price: ${money(w.total)} rupees in total.` : 'Price not quoted.'}`)
   else out.push(`No shop confirmed all ${qty}.`)
   if (unanswered) out.push(`${unanswered} shop${unanswered === 1 ? '' : 's'} could not be reached.`)
   if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} confirmed they will keep it for you.`)
@@ -52,11 +54,21 @@ export function searchSummary(s: SearchState, lang: Lang = s.request.language) {
   return summarize(s.request, ranked, lang, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
 }
 
-// WhatsApp share text: only the verified quote the user chooses to share. No phone numbers.
-export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, reserved: boolean) {
-  const price = r.total !== null ? `${inr(r.total)} for ${qtyLabel(req.quantity, req.unit)}` : 'price not quoted'
+// "14:05" in India time, whatever the viewer's time zone.
+export const istTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+// "confirmed 6 min ago": how fresh an answer is.
+export function ago(iso: string, now: number) {
+  const min = Math.floor((now - Date.parse(iso)) / 60_000)
+  return min < 1 ? 'just now' : min < 60 ? `${min} min ago` : min < 1440 ? `${Math.floor(min / 60)} h ago` : `on ${new Date(iso).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' })}`
+}
+
+// WhatsApp share text: only the verified quote the user chooses to share, availability first. No phone numbers.
+// `confirmedAt` is when the shop said it; a replay plays an old run back, so its time would mislead.
+export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, reserved: boolean, confirmedAt: string | null) {
   const tag = req.mode === 'simulated' ? '[SIMULATED DEMO, not a real shop] ' : req.mode === 'replay' ? '[REPLAY of a recorded run] ' : ''
-  return `${tag}Poochho found ${req.product} at ${r.shopName}: ${price}. ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone; please confirm at the shop.)`
+  const asOf = confirmedAt && req.mode !== 'replay' ? ` as of ${istTime(confirmedAt)} IST` : ''
+  return `${tag}Poochho found ${req.product} at ${r.shopName}: ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone${asOf}; please confirm at the shop.)`
 }
 
 // Parallel calling vs ringing the same shops one after another: the measured wall-clock time of the whole search

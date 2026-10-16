@@ -1,14 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { inr } from '@/lib/rank'
 import type { PublicExecution } from '@/lib/types'
-import { Lamp, reason, STATUS } from './ui'
+import { Lamp, Proof, reason, STATUS, token } from './ui'
 
 const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
+const noop = () => () => {}
+
 export default function CallCard({ e, now, quantity }: { e: PublicExecution; now: number; quantity: number }) {
   const s = STATUS[e.status]
+  const operator = useSyncExternalStore(noop, () => Boolean(token.get()), () => false)
   const live = !['done', 'failed', 'timeout'].includes(e.status)
   const x = e.extracted
   const lines = (e.transcript ?? '')
@@ -37,6 +40,7 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
         {s.label}
         {(e.status === 'failed' || e.status === 'timeout') && reason(e.error) && <span className="font-normal text-muted"> · {reason(e.error)}</span>}
       </p>
+      {e.kind === 'quote' && <Proof e={e} now={now} className="mt-1" />}
 
       {x && e.status === 'done' && (
         <dl className="mt-3 flex flex-wrap gap-2 text-sm">
@@ -57,7 +61,29 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
       {!x && e.status === 'done' && <p className="mt-2 text-sm text-muted">The call ended, but no usable answers were extracted.</p>}
 
       {lines.length > 0 && <Transcript lines={lines} />}
+      {e.answered_at && e.ended_at && (e.mode === 'live' ? operator && <Recording id={e.id} /> : <p className="mt-3 text-xs text-muted">{e.mode === 'simulated' ? 'Simulated call — no audio' : 'Replayed call — no audio'}</p>)}
     </article>
+  )
+}
+
+// The operator can listen to a LIVE call. Our server fetches it from Bolna at play time; the link is never stored.
+function Recording({ id }: { id: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle')
+  useEffect(() => () => void (src && URL.revokeObjectURL(src)), [src])
+  async function load() {
+    setState('loading')
+    const r = await fetch(`/api/executions/${id}/recording`, { headers: { 'x-admin-token': token.get() } }).catch(() => null)
+    const audio = r?.ok ? await r.blob().catch(() => null) : null
+    if (audio) setSrc(URL.createObjectURL(audio))
+    else setState('error')
+  }
+  if (src) return <audio className="mt-3 w-full" controls autoPlay src={src} aria-label="Call recording" />
+  return (
+    <button className="mt-3 inline-flex items-center gap-2 self-start rounded-full border border-line bg-white px-3 py-1 text-sm font-semibold disabled:opacity-50" onClick={load} disabled={state === 'loading'}>
+      <span aria-hidden>▶</span>
+      {state === 'loading' ? 'Loading the recording…' : state === 'error' ? 'Recording unavailable, try again' : 'Play the call recording'}
+    </button>
   )
 }
 

@@ -61,6 +61,20 @@ describe('SIMULATED search end to end', () => {
     expect(ranked.find((r) => r.shopName === 'Patil Provision')?.eligible).toBe(false)
   })
 
+  it("shows the shopkeeper's words only when the transcript contains them", async () => {
+    const s = (await getSearch(id))!
+    const by = Object.fromEntries(s.executions.map((e) => [e.shop_id, e]))
+    expect(by['demo-sharma-kirana'].extracted?.stock_quote).toBe('हाँ है, 2 packet मिल जाएगा.')
+    expect(by['demo-patil-provision'].extracted?.stock_quote).toBe('अभी सिर्फ 1 packet है.')
+    expect(by['demo-sharma-kirana'].cost_cents).toBeNull() // simulated calls cost nothing
+    // An extraction that claims words the shop never said: the quote is dropped on the way out.
+    const req = await db().from('search_requests').insert({ ...base }).select('id').single()
+    created.push(req.data!.id)
+    const ex = await db().from('call_executions').insert({ request_id: req.data!.id, shop_id: 'demo-sharma-kirana', mode: 'simulated', status: 'talking' }).select('id').single()
+    await applyEvent({ id: ex.data!.id }, { status: 'completed', duration: 20, transcript: 'assistant: Amul Butter है?\nuser: नहीं, खत्म हो गया.', extracted_data: { Q: { in_stock: { objective: 'no' }, stock_quote: { subjective: 'हाँ, दो packet है' } } } }, 'simulated')
+    expect((await getSearch(req.data!.id))!.executions[0].extracted).toMatchObject({ in_stock: 'no', stock_quote: null })
+  })
+
   it('ignores duplicate and stale out-of-order provider events', async () => {
     const s = (await getSearch(id))!
     const sharma = s.executions.find((e) => e.shop_id === 'demo-sharma-kirana')!

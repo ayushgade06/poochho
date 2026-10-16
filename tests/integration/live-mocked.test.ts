@@ -50,7 +50,7 @@ describe('LIVE orchestration against a mocked Bolna', () => {
   it('never has more calls in flight than the concurrency limit, and sends the agent variables', async () => {
     await Promise.all([dispatchQueued(), dispatchQueued()]) // two dispatchers racing
     expect(started.length).toBe(2)
-    const s = (await getSearch(requestId))!
+    const s = (await getSearch(requestId, true))!
     expect(s.executions.filter((e) => e.status === 'dispatching').map((e) => e.provider_execution_id).sort()).toEqual(['mock-1', 'mock-2'])
     expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(2)
     expect(started[0].body).toMatchObject({ agent_id: 'mock-agent', user_data: { item: 'Dolo 650', quantity: '2 strip', customer_area: 'Kothrud', call_purpose: 'quote', timezone: 'Asia/Kolkata' } })
@@ -60,13 +60,13 @@ describe('LIVE orchestration against a mocked Bolna', () => {
 
   it('applies webhooks by provider id, frees the line, and dispatches the next queued call', async () => {
     await applyEvent({ providerId: 'mock-1' }, { status: 'in-progress' }, 'webhook')
-    await applyEvent({ providerId: 'mock-1' }, { status: 'completed', duration: 30, transcript: 'assistant: hi\nuser: haan', extracted_data: { Q: { in_stock: { objective: 'yes', subjective: '' }, unit_price_inr: { objective: null, subjective: '30' } } } }, 'webhook')
+    await applyEvent({ providerId: 'mock-1' }, { status: 'completed', duration: 30, cost: 9, transcript: 'assistant: hi\nuser: haan', extracted_data: { Q: { in_stock: { objective: 'yes', subjective: '' }, unit_price_inr: { objective: null, subjective: '30' } } } }, 'webhook')
     await applyEvent({ providerId: 'mock-2' }, { status: 'no-answer' }, 'webhook')
     await dispatchQueued()
     expect(started.length).toBe(4)
-    const s = (await getSearch(requestId))!
+    const s = (await getSearch(requestId, true))!
     const byPid = Object.fromEntries(s.executions.map((e) => [e.provider_execution_id, e]))
-    expect(byPid['mock-1']).toMatchObject({ status: 'done', provider_status: 'completed' })
+    expect(byPid['mock-1']).toMatchObject({ status: 'done', provider_status: 'completed', cost_cents: 9 })
     expect(byPid['mock-1'].extracted?.unit_price_inr).toBe(30)
     expect(byPid['mock-2']).toMatchObject({ status: 'failed', error: 'no-answer' })
   })
@@ -74,7 +74,7 @@ describe('LIVE orchestration against a mocked Bolna', () => {
   it('falls back to polling the provider when no webhook arrives', async () => {
     polled['mock-3'] = { id: 'mock-3', status: 'completed', conversation_duration: 20, transcript: 'assistant: hi', extracted_data: { Q: { in_stock: { objective: 'no', subjective: '' } } } }
     await tick(requestId)
-    const s = (await getSearch(requestId))!
+    const s = (await getSearch(requestId, true))!
     expect(s.executions.find((e) => e.provider_execution_id === 'mock-3')).toMatchObject({ status: 'done', provider_status: 'completed' })
   })
 
@@ -86,10 +86,10 @@ describe('LIVE orchestration against a mocked Bolna', () => {
     expect(events.error).toBeNull()
   })
 
-  it('hides live transcripts unless the operator token is presented', async () => {
+  it("hides live transcripts and Bolna's call ids (they unlock recordings) unless the operator token is presented", async () => {
     const pub = (await getSearch(requestId))!
     expect(pub.redacted).toBe(true)
-    expect(pub.executions.every((e) => e.transcript === null)).toBe(true)
+    expect(pub.executions.every((e) => e.transcript === null && e.provider_execution_id === null)).toBe(true)
     const op = (await getSearch(requestId, true))!
     expect(op.executions.find((e) => e.provider_execution_id === 'mock-1')?.transcript).toContain('assistant: hi')
   })

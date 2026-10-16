@@ -1,6 +1,6 @@
 import type { Extraction } from './types'
 
-const FIELDS = ['in_stock', 'unit_price_inr', 'total_price_inr', 'price_unit', 'qty_available', 'brand_or_variant', 'pickup_or_delivery', 'ready_in_minutes', 'can_hold', 'opt_out', 'notes', 'confidence']
+const FIELDS = ['in_stock', 'unit_price_inr', 'total_price_inr', 'price_unit', 'qty_available', 'brand_or_variant', 'pickup_or_delivery', 'ready_in_minutes', 'can_hold', 'opt_out', 'notes', 'stock_quote', 'confidence']
 const key = (k: string) => k.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
 
 // Parses Bolna's extracted_data (Category → Extraction name → { objective, subjective, confidence_label }), and also
@@ -76,6 +76,7 @@ export function parseExtraction(raw: unknown): Extraction | null {
     opt_out: word('opt_out') === 'yes' ? 'yes' : 'no',
     confidence: 'low',
     notes: str('notes', 300),
+    stock_quote: str('stock_quote', 300),
   }
   // Explicit confidence field if configured; otherwise the weakest provider confidence among the answers that
   // drive ranking (availability and the quoted price). No signal at all means "low".
@@ -91,6 +92,25 @@ export function parseExtraction(raw: unknown): Extraction | null {
   // A shop that says "not in stock" but quotes a quantity contradicts itself: keep the uncertainty.
   if (x.in_stock === 'no' && (x.qty_available ?? 0) > 0) x.in_stock = 'unsure'
   return x
+}
+
+// The extraction model is asked for the shopkeeper's words verbatim, but nothing guarantees it. A quote is shown
+// only if it appears, word for word, inside one of the shopkeeper's own turns ("user:" lines; never the AI's),
+// ignoring case, punctuation and spacing. A paraphrase, a translation or an invented line never reaches the screen.
+const words = (s: string) => s.normalize('NFC').toLowerCase().replace(/[\p{P}\p{S}]+/gu, ' ').replace(/\s+/g, ' ').trim()
+export function quoteHeard(quote: string | null | undefined, transcript: string | null | undefined) {
+  const q = quote ? words(quote) : ''
+  if (!q || !transcript) return false
+  const turns: string[] = []
+  let shop = false
+  for (const line of transcript.split('\n')) {
+    const m = /^\s*(assistant|user|agent|bot)\s*:(.*)$/i.exec(line)
+    const isShop: boolean = m ? m[1].toLowerCase() === 'user' : shop // an unprefixed line continues the turn above it
+    if (isShop && shop) turns[turns.length - 1] += ' ' + (m ? m[2] : line) // the transcriber splits a turn on pauses
+    else if (isShop) turns.push(m![2])
+    shop = isShop
+  }
+  return turns.some((t) => ` ${words(t)} `.includes(` ${q} `)) // whole words only
 }
 
 // A quote is usable once availability is known and, if available, a price was given.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUsableQuote, parseExtraction } from '@/lib/extraction'
+import { isUsableQuote, parseExtraction, quoteHeard } from '@/lib/extraction'
 
 describe('parseExtraction', () => {
   it('accepts objects, JSON strings, { value } wrappers and one level of grouping', () => {
@@ -54,7 +54,39 @@ describe('parseExtraction', () => {
   })
 
   it('treats placeholder strings as missing', () => {
-    expect(parseExtraction({ in_stock: 'yes', brand_or_variant: 'unknown', notes: ' N/A ' })).toMatchObject({ brand_or_variant: null, notes: null })
+    expect(parseExtraction({ in_stock: 'yes', brand_or_variant: 'unknown', notes: ' N/A ', stock_quote: 'null' })).toMatchObject({ brand_or_variant: null, notes: null, stock_quote: null })
+    expect(parseExtraction({ Q: { in_stock: { objective: 'yes' }, stock_quote: { objective: null, subjective: ' हाँ है ' } } })?.stock_quote).toBe('हाँ है')
+  })
+})
+
+describe('quoteHeard: a quote is shown only if the shopkeeper really said it', () => {
+  const t = [
+    'assistant: नमस्ते, क्या आपके पास Amul Butter है, 2 packet?',
+    'user: हाँ है,  दो Packet मिल जाएगा।',
+    'assistant: इसकी price क्या है?',
+    'user: दो packet का',
+    'user: पाँच सौ चालीस रुपये.', // the transcriber split one answer on a pause
+  ].join('\n')
+
+  it('accepts the exact words, ignoring case, punctuation and spacing', () => {
+    expect(quoteHeard('हाँ है, दो packet मिल जाएगा', t)).toBe(true)
+    expect(quoteHeard('"हाँ है दो packet मिल जाएगा!"', t)).toBe(true)
+    expect(quoteHeard('दो packet का पाँच सौ चालीस रुपये', t)).toBe(true)
+  })
+
+  it('rejects paraphrases, translations, the AI’s own words, partial words and stitched turns', () => {
+    expect(quoteHeard('हाँ, दो packet है', t)).toBe(false) // reworded
+    expect(quoteHeard('Yes, we have 2 packets', t)).toBe(false) // translated
+    expect(quoteHeard('क्या आपके पास Amul Butter है', t)).toBe(false) // the assistant said it
+    expect(quoteHeard('हाँ है दो Pack', t)).toBe(false) // not a whole word
+    expect(quoteHeard('मिल जाएगा दो packet का', t)).toBe(false) // across two separate answers
+    expect(quoteHeard('', t)).toBe(false)
+    expect(quoteHeard('...', t)).toBe(false)
+    expect(quoteHeard('हाँ है', null)).toBe(false)
+  })
+
+  it('compares composed and decomposed Unicode alike', () => {
+    expect(quoteHeard('Café'.normalize('NFD'), 'user: café ready'.normalize('NFC'))).toBe(true)
   })
 })
 
@@ -76,7 +108,11 @@ describe('parseExtraction on a real Bolna response', () => {
   it('reads every Shop Quote answer and the provider confidence', () => {
     expect(parseExtraction(real)).toEqual({
       in_stock: 'yes', unit_price_inr: 270, total_price_inr: 540, price_unit: 'packet', qty_available: 2, brand_or_variant: 'Amul Butter 500g',
-      pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: expect.stringContaining('540'),
+      pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: null, stock_quote: 'हाँ है, दो packet मिल जाएगा',
     })
+  })
+
+  it("returns a quote that passes the transcript check: the shopkeeper's line in the sample was copied verbatim", () => {
+    expect(quoteHeard(parseExtraction(real)!.stock_quote, 'assistant: क्या आपके पास Amul Butter 500g है, 2 packet की quantity में?\nuser: हाँ है, दो packet मिल जाएगा.')).toBe(true)
   })
 })

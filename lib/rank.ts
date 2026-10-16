@@ -1,7 +1,8 @@
 import type { CallStatus, Extraction, SearchRequest } from './types'
 
-// Score (0–100) = (stock + price + readiness + hold points) × confidence multiplier. See README "Ranking".
-export const WEIGHTS = { stock: 50, price: 25, ready: 15, hold: 10 }
+// Score (0–100) = (stock + readiness + hold + price points) × confidence multiplier. See README "Ranking".
+// Availability leads: packaged goods and medicines carry a printed MRP, so prices barely differ between shops.
+export const WEIGHTS = { stock: 50, ready: 20, hold: 15, price: 15 }
 export const CONFIDENCE = { high: 1, med: 0.85, low: 0.6 }
 const READY_HORIZON_MIN = 120 // readiness points fall linearly to 0 at two hours
 
@@ -44,19 +45,19 @@ export const qtyLabel = (q: number, unit: string) => `${q} ${q === 1 ? unit : (P
 
 const positive = (n: number | null | undefined) => (n != null && n > 0 ? n : null)
 
+// Whether a shop's answer covers the requested quantity.
+export function stockOf(x: Extraction | null, quantity: number): Ranked['stock'] {
+  if (!x) return 'unknown'
+  if (x.in_stock === 'no') return 'none'
+  if (x.in_stock === 'partial' || (x.in_stock === 'yes' && x.qty_available !== null && x.qty_available < quantity)) return 'short'
+  return x.in_stock === 'yes' ? 'full' : 'unknown'
+}
+
 export function rankResults(req: Req, rows: Input[]): Ranked[] {
   const q = req.quantity
   const base = rows.map((r) => {
     const x = r.status === 'done' ? r.extracted : null
-    const stock: Ranked['stock'] = !x
-      ? 'unknown'
-      : x.in_stock === 'no'
-        ? 'none'
-        : x.in_stock === 'partial' || (x.in_stock === 'yes' && x.qty_available !== null && x.qty_available < q)
-          ? 'short'
-          : x.in_stock === 'yes'
-            ? 'full'
-            : 'unknown'
+    const stock = stockOf(x, q)
     // unitMatch: true = price stated for the requested unit; false = for a different unit; null = unit not stated.
     const unitMatch = x?.price_unit ? normUnit(x.price_unit) === normUnit(req.unit) : null
     const comparable = unitMatch !== false
@@ -102,18 +103,19 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     else if (unit === null && stock !== 'none') flags.push('Price not quoted')
     if (x.confidence === 'low') flags.push('Low-confidence answer')
 
+    // Has it, how soon, will they hold it; the price comes last.
     const parts = [
       stock === 'full' ? `Has all ${qtyLabel(q, req.unit)}` : stock === 'short' ? (x.qty_available !== null ? `Only ${x.qty_available} available` : 'Partial stock') : stock === 'none' ? 'Not in stock' : 'Stock unclear',
     ]
     if (stock !== 'none') {
+      parts.push(x.ready_in_minutes === null ? 'readiness not confirmed' : x.ready_in_minutes === 0 ? 'ready now' : `ready in ~${x.ready_in_minutes} min`)
+      parts.push(x.can_hold === 'yes' ? 'can hold it' : x.can_hold === 'no' ? 'cannot hold it' : 'hold not confirmed')
       parts.push(
         total !== null ? `${inr(total)} total${q !== 1 && unit !== null ? ` (${inr(unit)} each)` : ''}`
         : unit !== null ? `${inr(unit)} per ${req.unit}`
         : unitMatch === null && positive(x.unit_price_inr) ? `${inr(x.unit_price_inr!)} (unit not stated)`
         : 'price not quoted',
       )
-      parts.push(x.ready_in_minutes === null ? 'readiness not confirmed' : x.ready_in_minutes === 0 ? 'ready now' : `ready in ~${x.ready_in_minutes} min`)
-      parts.push(x.can_hold === 'yes' ? 'can hold it' : x.can_hold === 'no' ? 'cannot hold it' : 'hold not confirmed')
     }
     const ready = stock === 'none' ? null : x.ready_in_minutes
     const eligible = stock === 'full' && !overBudget && !late && !budgetUnknown && !readyUnknown
@@ -139,11 +141,14 @@ export function winnerReason(ranked: Ranked[], hold: 'confirmed' | 'declined' | 
   const w = ranked.find((r) => r.winner)
   if (!w) return null
   const full = ranked.filter((r) => r.eligible)
+  const others = full.filter((r) => r !== w)
   const priced = full.filter((r) => r.total !== null)
   const unpriced = ranked.filter((r) => r.stock !== 'none' && r.stock !== 'unknown' && r.unit === null).length
   const bits: string[] = []
-  if (w.total !== null && priced.length > 1 && priced.every((r) => r.total! >= w.total!)) bits.push(`Lowest verified total of ${priced.length} priced quotes for the full quantity`)
-  else if (full.length === 1) bits.push('Only shop that confirmed everything you asked for')
+  if (!others.length) bits.push('Only shop that confirmed everything you asked for')
+  // "Soonest" only when every other full-stock shop confirmed a later time; a tie or an unknown time is no claim.
+  else if (w.ready !== null && others.every((r) => r.ready !== null && r.ready > w.ready!)) bits.push(`Ready soonest of ${full.length} shops with the full quantity`)
+  else if (w.total !== null && priced.length > 1 && priced.every((r) => r.total! >= w.total!)) bits.push(`Lowest verified total of ${priced.length} priced quotes for the full quantity`)
   else bits.push(`Highest score among ${full.length} shops that confirmed the full quantity`)
   if (unpriced) bits.push(`${unpriced} shop${unpriced > 1 ? 's' : ''} did not quote a comparable price`)
   bits.push(

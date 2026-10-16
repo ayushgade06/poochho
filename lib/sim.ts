@@ -36,8 +36,8 @@ function lines(lang: Lang) {
   const hi = lang === 'hi'
   return {
     open: (shop: string, area: string) =>
-      hi ? `नमस्ते, क्या आप ${shop} से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो ${area} से हैं. क्या आप एक मिनट दे सकते हैं?`
-        : `Hello, is this ${shop}? I am Poochho's AI assistant, calling on behalf of a customer from ${area}. Do you have a minute?`,
+      hi ? `नमस्ते, क्या आप ${shop} से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो ${area} से हैं. यह call record हो रही है. क्या आप एक मिनट दे सकते हैं?`
+        : `Hello, is this ${shop}? I am Poochho's AI assistant, calling on behalf of a customer from ${area}. This call is recorded. Do you have a minute?`,
     yes: hi ? 'हाँ, बोलिए.' : 'Yes, go ahead.',
     ask: (item: string, q: string) => (hi ? `क्या आपके पास ${item} है, ${q} की quantity में?` : `Do you have ${item}, ${q}?`),
     have: (q: string) => (hi ? `हाँ है, ${q} मिल जाएगा.` : `Yes, we have ${q}.`),
@@ -54,8 +54,8 @@ function lines(lang: Lang) {
     bye: hi ? 'बहुत शुक्रिया. हम customer को सब बता देंगे. आपका दिन अच्छा हो.' : 'Thank you so much. We will let the customer know. Have a good day.',
     sorry: hi ? 'ठीक है, समझ गई. आपका समय देने के लिए धन्यवाद.' : 'Okay, understood. Thank you for your time.',
     reserve: (item: string, q: string, area: string) =>
-      hi ? `नमस्ते, मैं Poochho की AI assistant हूँ. थोड़ी देर पहले ${item} के बारे में बात हुई थी. क्या आप ${q} हमारे customer के लिए रख सकते हैं? वो ${area} से आ रहे हैं.`
-        : `Hello, this is Poochho's AI assistant again about ${item}. Could you please keep ${q} aside for our customer? They are coming from ${area}.`,
+      hi ? `नमस्ते, मैं Poochho की AI assistant हूँ, यह call record हो रही है. थोड़ी देर पहले ${item} के बारे में बात हुई थी. क्या आप ${q} हमारे customer के लिए रख सकते हैं? वो ${area} से आ रहे हैं.`
+        : `Hello, this is Poochho's AI assistant again about ${item}, and this call is recorded. Could you please keep ${q} aside for our customer? They are coming from ${area}.`,
     reserved: hi ? 'हाँ, रख दिया. आ जाइए.' : 'Yes, it is kept aside. Please come.',
     unsure: hi ? 'अभी पक्का नहीं बोल सकते, आके देख लीजिए.' : 'I cannot promise right now, please come and check.',
   }
@@ -99,10 +99,13 @@ export function quoteScript(shop: DemoShop, req: Req, providerId: string): Scrip
   const stock = s.stock ?? 'yes'
   const t: [boolean, string][] = [[true, L.open(shop.name, req.area)], [false, L.yes], [true, L.ask(item, q)]]
   const f: Record<string, string | null> = { in_stock: stock, unit_price_inr: '', total_price_inr: '', price_unit: '', qty_available: '', brand_or_variant: req.brand_or_variant ?? '', pickup_or_delivery: 'unknown', ready_in_minutes: '', can_hold: 'unknown', opt_out: 'no', notes: '' }
+  // stock_quote is the shopkeeper's availability line, verbatim, as Bolna's extraction is asked to return it.
   if (stock === 'no') {
     t.push([false, L.none], [true, L.sorry])
+    f.stock_quote = L.none
   } else {
-    t.push([false, stock === 'partial' ? L.some(s.qty ?? 1, req.unit) : L.have(q)], [true, L.price(item)])
+    f.stock_quote = stock === 'partial' ? L.some(s.qty ?? 1, req.unit) : L.have(q)
+    t.push([false, f.stock_quote], [true, L.price(item)])
     if (stock === 'partial') f.qty_available = String(s.qty ?? 1)
     if (unit === null) t.push([false, L.noPrice])
     else if (stock === 'partial') {

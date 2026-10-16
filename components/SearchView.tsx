@@ -71,10 +71,15 @@ export default function SearchView({ id }: { id: string }) {
     }
   }, [id, active, mode])
 
+  // Call timers tick every second; afterwards "confirmed 6 min ago" only needs a slow tick.
   useEffect(() => {
-    if (!active) return
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
+    const tick = () => setNow(Date.now())
+    const first = setTimeout(tick, 0)
+    const t = setInterval(tick, active ? 1000 : 30_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(t)
+    }
   }, [active])
 
   useEffect(() => {
@@ -147,7 +152,7 @@ export default function SearchView({ id }: { id: string }) {
         ))}
       </section>
 
-      {finishedN > 0 && <Results data={data} ranked={ranked} holds={holds} finished={finishedN === quotes.length} sarvam={sarvam} />}
+      {finishedN > 0 && <Results data={data} ranked={ranked} holds={holds} finished={finishedN === quotes.length} sarvam={sarvam} now={now} />}
     </div>
   )
 }

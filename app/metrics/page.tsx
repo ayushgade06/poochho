@@ -2,10 +2,13 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import Labeler from '@/components/Labeler'
 import { metricsRows } from '@/lib/engine'
-import { computeMetrics, MIN_SAMPLE } from '@/lib/metrics'
+import { centsToInr, computeMetrics, MIN_SAMPLE } from '@/lib/metrics'
+import { inr } from '@/lib/rank'
 
 const MODES = ['live', 'simulated', 'replay'] as const
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`)
+const rupees = (cents: number | null) => (cents === null ? '—' : `≈ ${inr(centsToInr(cents))}`)
+const usc = (cents: number | null) => (cents === null ? '—' : `${Math.round(cents * 10) / 10}¢`)
 
 export default function MetricsPage({ searchParams }: PageProps<'/metrics'>) {
   return (
@@ -40,6 +43,12 @@ async function Metrics({ searchParams }: { searchParams: PageProps<'/metrics'>['
     ['Extraction accuracy', pct(m.accuracy), `${m.labelsN} labelled fields across ${m.labelledCalls} calls`, m.labelsN],
     ['Calls completed', String(m.completed), 'reached a final answer', m.initiated],
   ]
+  // What Bolna charged (US cents, shown in rupees). Only real calls cost anything.
+  if (mode === 'live')
+    stats.push(
+      ['Cost per answered call', rupees(m.costPerAnsweredCents), `${usc(m.costPerAnsweredCents)} US: quote-call charges / ${m.answered} answered`, m.answered],
+      ['Cost per successful search', rupees(m.costPerFoundCents), `${usc(m.costPerFoundCents)} US: all ${usc(m.spentCents)} charged / ${m.found} of ${m.searches} searches where a shop had it all`, m.found],
+    )
   return (
     <>
       <nav className="flex gap-2" aria-label="Mode">
@@ -75,6 +84,11 @@ async function Metrics({ searchParams }: { searchParams: PageProps<'/metrics'>['
           <li>Answered: the call reached a conversation or a final answer. Failed: no answer, busy, voicemail, provider error, not placed, or no result in time.</li>
           <li>First usable quote: availability known plus a price, or a clear &quot;not in stock&quot;. Time is measured from dialling to when that answer was stored.</li>
           <li>Extraction accuracy: share of manually labelled fields marked correct. Unlabelled calls are not counted either way.</li>
+          <li>
+            Cost (LIVE only): what Bolna charged per call (its <code>total_cost</code>, in US cents, which matched the wallet deduction), shown in rupees at ₹92 per dollar. Per answered call:
+            quote-call charges, unanswered calls included, over answered calls. Per successful search: everything charged, reservation calls included, over searches in which a shop
+            confirmed the full quantity.
+          </li>
         </ul>
       </details>
       <Labeler mode={mode} />
