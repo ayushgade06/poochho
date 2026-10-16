@@ -2,10 +2,20 @@
 
 **India's shops have no inventory API. The phone is the API. Poochho calls for you.**
 
-You say what you need ("2 packets of Amul Butter, near Kothrud"). Poochho calls several local shops at the same time
-through a Bolna voice agent, asks about stock, price and whether they can hold it, then ranks the verified answers.
-It also gives a spoken summary in Hindi or English. One tap places a separate call asking the best shop to keep it
-for you.
+Ask once, in any of 11 Indian languages: "Dolo 650, 1 strip, Kothrud". Poochho phones nearby shops and chemists in
+parallel through a Bolna voice agent, each in its own language, and asks three things: do you have it, how soon is
+it ready, will you keep it for me. Answers appear while the shopkeeper is still talking, every one backed by the
+shopkeeper's own words; calling stops the moment one shop has it all and will hold it; one more tap asks that shop to
+keep it aside. You hear the result in your language. India-first, consent-first, and honest by construction: the AI
+says it is an AI in its first sentence, unknowns stay unknown, and no LLM ranks anything.
+
+**Try it:** open the app and press **Find for me** (SIMULATED: scripted calls to fictional shops), play the **Replay**,
+or choose **Judge** to play a shopkeeper yourself in the browser (needs a microphone). Live link and video: added
+after deployment.
+
+You say what you need in one sentence ("2 packet Amul Butter, Kothrud, Pune"), check the details it understood, and
+review exactly which shops will be called. Poochho calls them at the same time, ranks the verified answers, gives a
+spoken summary, and one tap places a separate call asking the best shop to keep it for you.
 
 **Availability first, and every answer has proof.** Packaged goods and medicines carry a printed MRP, so prices barely
 differ between shops; what matters is who has it now, how soon it's ready and whether they'll hold it. Results lead

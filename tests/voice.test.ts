@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSpokenRequest } from '@/lib/voice'
+import { parseSentence, parseSpokenRequest } from '@/lib/voice'
 import { cleanUnderstood } from '@/lib/sarvam'
 
 describe('parseSpokenRequest', () => {
@@ -35,5 +35,16 @@ describe('cleanUnderstood (Sarvam model output)', () => {
     expect(cleanUnderstood({ product: 'x'.repeat(500), quantity: -3, unit: 'tonne', category: 'weapons', shop_ids: ['a'], phone: '999' })).toEqual({ product: 'x'.repeat(120) })
     expect(cleanUnderstood(null)).toEqual({})
     expect(cleanUnderstood({ quantity: '2' })).toEqual({})
+  })
+})
+
+describe('parseSentence (the home page box, when Sarvam is unavailable)', () => {
+  it('splits the item from the place', () => {
+    expect(parseSentence('2 packet Amul Butter, Kothrud, Pune')).toEqual({ quantity: 2, unit: 'packet', product: 'Amul Butter', area: 'Kothrud', city: 'Pune' })
+    expect(parseSentence('Dolo 650, 1 strip, Kothrud, Pune')).toEqual({ product: 'Dolo 650', quantity: 1, unit: 'strip', area: 'Kothrud', city: 'Pune' })
+    expect(parseSentence('Amul Butter near Kothrud')).toEqual({ product: 'Amul Butter', area: 'Kothrud' })
+    expect(parseSentence('  ')).toEqual({})
+    expect(parseSentence('Amul Butter, Sector 5, Noida')).toEqual({ product: 'Amul Butter', area: 'Sector 5', city: 'Noida' })
+    expect(parseSentence('Made in India salt, Kothrud, Pune')).toEqual({ product: 'Made in India salt', area: 'Kothrud', city: 'Pune' })
   })
 })

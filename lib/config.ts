@@ -16,6 +16,8 @@ export const cfg = {
   judgePerDay: int(process.env.JUDGE_CALLS_PER_DAY, 30, 1, 1000),
   voicePerIp: int(process.env.VOICE_INPUTS_PER_IP_PER_DAY, 20, 1, 1000),
   voicePerDay: int(process.env.VOICE_INPUTS_PER_DAY, 300, 1, 10000),
+  textPerIp: int(process.env.TEXT_INPUTS_PER_IP_PER_DAY, 60, 1, 1000), // typed sentences → fields (Sarvam)
+  textPerDay: int(process.env.TEXT_INPUTS_PER_DAY, 1000, 1, 100000),
 }
 
 // "HH:MM-HH:MM" in IST (UTC+5:30, no DST). Default 09:00–20:00, inside TRAI's 9 AM–9 PM guidance.

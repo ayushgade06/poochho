@@ -39,3 +39,13 @@ export function parseSpokenRequest(text: string): { product?: string; quantity?:
   const product = rest.join(' ').trim()
   return { ...(product && { product }), ...(quantity !== undefined && { quantity }), ...(unit && { unit }) }
 }
+
+// A whole sentence, typed or spoken: "2 packet Amul Butter, Kothrud, Pune" or "Dolo 650, 1 strip, Kothrud, Pune".
+// The first part and any part with a unit ("1 strip") describe the item; the other parts are the area, then the city
+// ("Sector 5" is a place: it has a number but no unit). Used when Sarvam isn't available; the user checks every field.
+export function parseSentence(text: string): { product?: string; quantity?: number; unit?: string; area?: string; city?: string } {
+  const parts = text.split(/,|\s+near\s+/i).map((s) => s.trim()).filter(Boolean)
+  const isItem = (s: string, i: number) => i === 0 || 'unit' in parseSpokenRequest(s)
+  const [area, city] = parts.filter((s, i) => !isItem(s, i))
+  return { ...parseSpokenRequest(parts.filter(isItem).join(' ')), ...(area && { area }), ...(city && { city }) }
+}

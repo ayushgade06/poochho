@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CALL_LANGS, callLanguage, CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type VoiceLang } from '@/lib/types'
 import { qtyLabel } from '@/lib/rank'
-import { parseSpokenRequest } from '@/lib/voice'
+import { parseSentence } from '@/lib/voice'
 import { field, label, ModeBanner, token } from './ui'
 
 type Config = {
@@ -38,6 +38,10 @@ export default function SearchForm() {
   const [busy, setBusy] = useState(false)
   const [fail, setFail] = useState<string | null>(null)
   const [heard, setHeard] = useState<{ text: string; filled: string[]; lang?: VoiceLang | null } | null>(null)
+  const [sentence, setSentence] = useState('') // "2 packet Amul Butter, Kothrud, Pune": the one box on the home page
+  const [understood, setUnderstood] = useState('') // the sentence the fields were last filled from
+  const [details, setDetails] = useState(false)
+  const [parsing, setParsing] = useState(false)
 
   useEffect(() => {
     fetch('/api/config').then((r) => r.json()).then(setConfig).catch(() => setFail('Could not load settings.'))
@@ -63,6 +67,7 @@ export default function SearchForm() {
   const set = (k: keyof typeof EMPTY, v: string) => {
     setF((p) => ({ ...p, [k]: v }))
     setErrors((e) => ({ ...e, [k]: '' }))
+    setUnderstood(sentence.trim()) // a hand edit wins: "Find for me" won't re-read the sentence over it
   }
   const liveBlocked = !!config && (config.live.blockers.length > 0 || !config.live.inWindow)
 
@@ -102,15 +107,41 @@ export default function SearchForm() {
   }
 
   // Sarvam returns the detected language and fields understood from the whole sentence; otherwise the local
-  // parser picks out product, quantity and unit. Either way the user reviews every field before any call.
-  function onHeard(text: string, sarvam?: Heard) {
-    const p: Record<string, string | number> = sarvam?.fields ?? parseSpokenRequest(text)
+  // parser picks out product, quantity, unit and place. Either way the user reviews every field before any call.
+  function onHeard(text: string, sarvam?: Heard, spoken = true) {
+    if (spoken) setSentence(text)
+    setUnderstood(text)
+    const p: Record<string, string | number> = sarvam?.fields && Object.keys(sarvam.fields).length ? sarvam.fields : parseSentence(text)
     const filled = (Object.keys(EMPTY) as (keyof typeof EMPTY)[]).filter((k) => p[k] !== undefined && k !== 'language')
     const lang = sarvam?.language
-    setF((prev) => ({ ...prev, ...Object.fromEntries(filled.map((k) => [k, String(p[k])])), ...(lang === 'en-IN' ? { language: 'en' as Lang } : lang === 'hi-IN' ? { language: 'hi' as Lang } : {}) }))
+    // A new sentence describes a new request: what the last one filled is cleared; budget, deadline and notes stay.
+    const cleared = { product: '', brand_or_variant: '', quantity: '1', unit: 'piece', category: '', city: '', area: '' }
+    setF((prev) => ({ ...prev, ...cleared, ...Object.fromEntries(filled.map((k) => [k, String(p[k])])), ...(lang === 'en-IN' ? { language: 'en' as Lang } : lang === 'hi-IN' ? { language: 'hi' as Lang } : {}) }))
     setErrors({})
-    setHeard({ text, filled: filled.map((k) => k.replace(/_/g, ' ')), lang })
+    setHeard(spoken ? { text, filled: filled.map((k) => k.replace(/_/g, ' ')), lang } : null)
   }
+
+  // A typed sentence goes through the same Sarvam step as a spoken one (capped; the local parser if unavailable).
+  async function understandTyped() {
+    const text = sentence.trim()
+    setParsing(true)
+    const r = await fetch('/api/understand', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-token': token.get() }, body: JSON.stringify({ text }) }).catch(() => null)
+    const d = r?.ok ? await r.json().catch(() => null) : null
+    onHeard(text, d?.fields ? { language: null, fields: d.fields } : undefined, false)
+    setParsing(false)
+  }
+  const fresh = sentence.trim() !== '' && sentence.trim() !== understood // typed, not yet turned into fields
+  // What was understood, as chips; tapping one opens the details. Required ones that are missing say so.
+  const chips: [string, string, boolean][] = [
+    ['product', f.product, true],
+    ['variant', f.brand_or_variant, false],
+    ['quantity', f.quantity && `${f.quantity} ${f.unit}`, true],
+    ['area', f.area, true],
+    ['city', f.city, true],
+    ['category', f.category, false],
+    ['budget', f.max_budget_inr && `up to ₹${f.max_budget_inr}`, false],
+    ['ready', f.need_within_minutes && `within ${f.need_within_minutes} min`, false],
+  ]
 
   if (mode === 'replay' || step === 'form')
     return (
@@ -157,20 +188,22 @@ export default function SearchForm() {
           <form
             className="mt-6 grid grid-cols-6 gap-x-4 gap-y-4"
             noValidate
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault()
+              if (fresh) return void (await understandTyped()) // first turn the sentence into fields to check
               if (check()) setStep('review')
+              else setDetails(true) // show the fields that need fixing
             }}
           >
             <div className="col-span-6">
               <div className="flex items-end justify-between gap-3">
-                <label htmlFor="product" className={label}>
-                  What do you need?
+                <label htmlFor="sentence" className={label}>
+                  What do you need, and where?
                 </label>
                 <VoiceButton lang={f.language} speech={config?.speech ?? 'browser'} onText={onHeard} />
               </div>
-              <input id="product" className={field} placeholder="e.g. Amul Butter" value={f.product} onChange={(e) => set('product', e.target.value)} aria-invalid={!!errors.product} aria-describedby="product-err" autoComplete="off" />
-              <Err id="product-err" msg={errors.product} />
+              <input id="sentence" className={`${field} text-lg`} placeholder="2 packet Amul Butter, Kothrud, Pune" value={sentence} onChange={(e) => setSentence(e.target.value)} autoComplete="off" />
+              <p className="mt-1 text-sm text-muted">Type or say it, in any of 11 Indian languages: &ldquo;Dolo 650, 1 strip, Kothrud, Pune&rdquo;. You check every detail before anything is called.</p>
               {heard && (
                 <p className="mt-2 rounded-lg bg-marigold-soft px-3 py-2 text-sm">
                   Heard{heard.lang ? ` (${VOICE_LANGS[heard.lang]})` : ''}: <q>{heard.text}</q>.{' '}
@@ -178,6 +211,29 @@ export default function SearchForm() {
                 </p>
               )}
             </div>
+            {understood && (
+              <ul className="col-span-6 flex flex-wrap gap-2" aria-label="What we understood: tap to change">
+                {chips.map(([k, v, needed]) =>
+                  v || needed ? (
+                    <li key={k}>
+                      <button type="button" onClick={() => setDetails(true)} className={`rounded-full border px-3 py-1.5 text-sm ${v ? 'border-ink bg-white font-semibold' : 'border-dashed border-chili text-chili'}`}>
+                        <span className="mr-1 font-normal text-muted">{k}</span>
+                        {v || 'add'}
+                      </button>
+                    </li>
+                  ) : null,
+                )}
+                <li className="self-center text-sm text-muted">· calls in {CALL_LANGS[f.language].name} unless a shop speaks another language</li>
+              </ul>
+            )}
+            <button type="button" className="col-span-6 justify-self-start text-left text-sm font-semibold text-indigo underline-offset-2 hover:underline" onClick={() => setDetails(!details)} aria-expanded={details}>
+              {details ? 'Hide details' : 'Edit details: product, quantity, place, budget, deadline, notes'}
+            </button>
+            {details && (
+              <>
+            <Field className="col-span-6" id="product" lbl="Product" err={errors.product}>
+              <input id="product" className={field} placeholder="e.g. Amul Butter" value={f.product} onChange={(e) => set('product', e.target.value)} aria-invalid={!!errors.product} autoComplete="off" />
+            </Field>
             <Field className="col-span-6 sm:col-span-3" id="brand" lbl="Brand / variant (optional)">
               <input id="brand" className={field} placeholder="500g" value={f.brand_or_variant} onChange={(e) => set('brand_or_variant', e.target.value)} />
             </Field>
@@ -233,9 +289,11 @@ export default function SearchForm() {
             <Field className="col-span-6" id="constraints" lbl="Anything else? (optional, saved with the request; the call itself asks about stock, price and holding)">
               <textarea id="constraints" rows={2} maxLength={300} className={field} placeholder="e.g. sealed pack only" value={f.constraints} onChange={(e) => set('constraints', e.target.value)} />
             </Field>
+              </>
+            )}
             {fail && <p className="col-span-6 rounded-lg bg-chili-soft px-3 py-2 text-chili" role="alert">{fail}</p>}
-            <button type="submit" className="col-span-6 rounded-xl bg-ink px-5 py-4 text-lg font-semibold text-paper transition hover:bg-ink/90" disabled={!config}>
-              Find for me →
+            <button type="submit" className="col-span-6 rounded-xl bg-ink px-5 py-4 text-lg font-semibold text-paper transition hover:bg-ink/90 disabled:opacity-40" disabled={!config || parsing || (!fresh && !understood && !details)}>
+              {fresh ? 'Next: check the details →' : 'Find for me →'}
             </button>
           </form>
         )}

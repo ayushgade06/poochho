@@ -285,8 +285,8 @@ export async function startWebCall(executionId: string, allowed: () => Promise<b
 
 // Daily caps on public features that cost money, counted atomically in the database (bump_usage): overall, and
 // per visitor as an HMAC of the IP (the IP itself is never stored).
-export async function withinDailyCap(kind: 'judge' | 'voice', req: Request) {
-  const [perIp, perDay] = kind === 'judge' ? [cfg.judgePerIp, cfg.judgePerDay] : [cfg.voicePerIp, cfg.voicePerDay]
+export async function withinDailyCap(kind: 'judge' | 'voice' | 'text', req: Request) {
+  const [perIp, perDay] = { judge: [cfg.judgePerIp, cfg.judgePerDay], voice: [cfg.voicePerIp, cfg.voicePerDay], text: [cfg.textPerIp, cfg.textPerDay] }[kind]
   const visitor = createHmac('sha256', process.env.SUPABASE_SECRET_KEY ?? '').update(clientIp(req)).digest('hex').slice(0, 16)
   // The visitor's own counter first: once they hit their limit, they stop counting against everyone else's.
   for (const [key, limit] of [[`${kind}:${visitor}`, perIp], [`${kind}:all`, perDay]] as const) {

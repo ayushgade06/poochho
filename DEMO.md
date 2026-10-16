@@ -21,7 +21,7 @@ banner says so honestly.
 | Time | Screen | Say |
 |---|---|---|
 | 0:00–0:10 | Home page, headline | "Need Dolo 650 at 10 pm? You call six chemists, four don't pick up. India's shops have no inventory API. **The phone is the API.** Poochho calls for you." |
-| 0:10–0:20 | Choose **Replay** (or Simulated), pick the run, **Play replay**. *Live alternative: type "Amul Butter, 2 packet, Kothrud, Pune", Find for me, review the 5 shops, Place 5 calls.* | "I ask once. Poochho rings five nearby shops **at the same time**, in Hindi. You review exactly who gets called, and only shops that agreed to test calls can be called." |
+| 0:10–0:20 | Choose **Replay** (or Simulated), pick the run, **Play replay**. *Live alternative: type "2 packet Amul Butter, Kothrud, Pune" in the one box (or say it), check the chips, Find for me, review the shops, Place the calls.* | "I ask once. Poochho rings five nearby shops **at the same time**, in Hindi. You review exactly who gets called, and only shops that agreed to test calls can be called." |
 | 0:20–0:50 | Switchboard: lamps ring (marigold), talk (blue waveform); a card fills in **Heard live** while the call is still on; two shops show *Waiting for a free line*, then *Not called · already found at Sharma Kirana Store* | "Every call says *I'm an AI assistant* in its first sentence, and that it's recorded. It asks three things — stock, price, can you hold it — and the answer shows up while the shopkeeper is still talking. The moment Sharma Kirana said it has both packets and will keep them, Poochho stopped: these two shops were never disturbed. We never retry automatically either." |
 | 0:50–1:05 | Scroll to **Ledger**, point at a shop's quoted words | "Answers come back as structured data, ranked by a fixed formula, not an LLM, and availability comes first: who has it, how soon, will they hold it. Price is second, because packaged goods carry a printed MRP. Under each shop: its **own words**, checked word for word against the call transcript, and how fresh the answer is. A price nobody quoted shows as *not quoted*, never zero. Patil only has one packet, so it can't be the best match, however cheap." |
 | 1:05–1:20 | Best-match card, **Hold it**, **Yes** | "One tap places a second, separate call asking Sharma Kirana to keep it aside. It only says *reserved* if the shop actually agrees on that call." Wait for **Reservation confirmed by the shop**. |
@@ -58,3 +58,13 @@ by hand and say "you always review before anything is called".
 
 Never present simulated or replayed results as live, and never quote metrics from simulated runs as real-world
 performance (`/metrics` labels them).
+
+## Submission checklist (closes 31 Oct 2026)
+
+Taken from the submission form's code on bolna.ai/symphony/buildathon:
+
+- [ ] Register at <https://www.bolna.ai/symphony/buildathon> with the **same email** you submit from.
+- [ ] Description, **200 characters max**. Draft (145): "Ask in any of 11 Indian languages. Poochho phones nearby shops and chemists in parallel, finds who has it in stock now, and asks them to hold it."
+- [ ] **Exactly one submission link**: the deployed app. Its README/top links to the repo and the video.
+- [ ] Pitch video or deck: **Google Drive, Google Docs or Luma only** (https). YouTube and Loom links are rejected.
+- [ ] Before recording: a real LIVE run exported with `npm run replay:export -- <search id> "Real run"`, so the video and the stage can use it.

@@ -15,7 +15,7 @@ const tone = (v: string | undefined) => (v === 'yes' ? 'good' : v === 'no' ? 'ba
 
 export default function CallCard({ e, now, quantity }: { e: PublicExecution; now: number; quantity: number }) {
   const skipped = e.status === 'failed' && notNeeded(e.error) // never dialled: another shop already had it all
-  const s = skipped ? { label: 'Not called', tone: 'text-muted' } : STATUS[e.status]
+  const s = skipped ? { label: 'Not called', tone: 'text-muted' } : e.mode === 'judge' && e.status === 'queued' ? { label: 'Waiting for you to answer', tone: 'text-plum' } : STATUS[e.status]
   const operator = useSyncExternalStore(noop, () => Boolean(token.get()), () => false)
   const live = !['done', 'failed', 'timeout'].includes(e.status)
   const x = e.extracted

@@ -297,7 +297,22 @@ back if the cap is used up); the microphone is asked for before a session is min
 expires after 15 minutes; voice input falls back to the browser's own recognition once Sarvam is capped; judge mode
 needs at least one simulated shop.
 
-**Not yet verified:** `npm run build` and the browser check of the judge screens. The machine ran out of commit
-memory on 2026-10-17 at about 01:00 (1.3 GB headroom of 47 GB; other projects' dev servers were using most of it):
-the build compiles, then its type-check workers can't allocate memory. `npm run typecheck` passes on its own.
+**Build and browser check:** the first attempts ran out of commit memory (other projects' dev servers held most
+of it); once memory freed up the production build succeeded and judge mode was checked in the browser (see M6).
 **The first judge-mode browser call waits for your OK** (it needs a microphone, so it's yours to make).
+
+### M6: getting ready to submit (in progress)
+
+| Item | Status |
+|---|---|
+| Home page as one sentence box with the mic ("2 packet Amul Butter, Kothrud, Pune"); what was understood shows as chips; **Edit details** opens the full form (budget, deadline, notes). A typed sentence goes through the same Sarvam sentence-to-fields step as speech (`POST /api/understand`, sharing the voice caps), with a local parser (`parseSentence`) when Sarvam is unavailable | Done. Unit tests for the parser; browser check on a production build at desktop and 390 px (Sarvam turned "2 packet Amul Butter 500g, Kothrud, Pune" into product, variant, quantity, area, city and category chips) |
+| README top: one-paragraph pitch and how to try it | Done; the live link and the video link get added after deployment |
+| Deploy to Vercel, set the webhook and tool URLs, smoke test | Waits for your OK |
+| Record a real LIVE run and export its replay | Waits for you (you press the buttons) |
+| PITCH.md with re-checked facts and real `/metrics?mode=live` numbers | In progress |
+| Submission checklist | See DEMO.md / below once PITCH is done |
+
+The production build and the M5 browser check also ran once memory freed up (2026-10-17 ~01:00): judge mode shows its
+plum banner, the "Your shop" card with **Answer the call** (not pressed: the first browser call is yours), and the
+two simulated shops calling.
+
