@@ -26,10 +26,15 @@ if (cmd === 'check') {
   const text = JSON.stringify(agent)
   console.log(`Agent: ${agent.agent_name} · status ${agent.agent_status}`)
   for (const v of ['shop_name', 'item', 'quantity', 'customer_area']) console.log(`  prompt uses {${v}}: ${text.includes(v) ? 'yes' : 'NO'}`)
+  console.log(`  prompt uses {call_purpose}: ${text.includes('call_purpose') ? 'yes' : 'no (a "Hold it" call will sound like a quote call; see docs/bolna-setup.md §5)'}`)
+  console.log(`  welcome message says it is an AI: ${/\bAI\b/.test(agent.agent_welcome_message ?? '') ? 'yes' : 'NO (required; see docs/bolna-setup.md §4)'}`)
+  const tc = agent.tasks?.[0]?.task_config ?? {}
+  console.log(`  total call timeout: ${tc.call_terminate ?? '?'} s${tc.call_terminate > 90 ? ' (spec: 90 s, Engine tab)' : ''} · voicemail detection: ${tc.voicemail ? 'on' : 'OFF (turn on, Calling tab)'} · auto-reschedule: ${tc.auto_reschedule ? 'ON (turn off)' : 'off'}`)
   console.log(`  webhook URL set: ${agent.agent_config?.webhook_url ?? agent.webhook_url ? 'yes' : 'not visible via API (check the Extractions tab)'}`)
   const dispositions = await api(`/dispositions/?agent_id=${AGENT}`).catch((e) => (console.log(`  extractions: ${e.message}`), null))
   if (dispositions) {
-    const list = Array.isArray(dispositions) ? dispositions : (dispositions.data ?? [])
+    // With agent_id the API answers { agent_dispositions, global_dispositions }, not the array its docs show.
+    const list = Array.isArray(dispositions) ? dispositions : [...(dispositions.agent_dispositions ?? []), ...(dispositions.global_dispositions ?? [])]
     const names = list.map((d) => d.name)
     console.log(`  extractions configured: ${names.length}; missing from Poochho's set: ${ours.filter((n) => !names.includes(n)).join(', ') || 'none'}`)
   }

@@ -10,6 +10,11 @@ const x = (o: Partial<Extraction> = {}): Extraction => ({
 const row = (id: string, extracted: Extraction | null, status: 'done' | 'failed' = 'done') => ({ id, shopName: `Shop ${id}`, status, error: status === 'failed' ? 'no-answer' : null, extracted })
 
 describe('rankResults', () => {
+  it('takes the unit price from a stated total, not a per-unit figure that disagrees with it', () => {
+    const r = rankResults(req, [row('a', x({ unit_price_inr: 270, total_price_inr: 500 })), row('b', x({ unit_price_inr: 260 }))])
+    expect(r.map((y) => [y.id, y.total, y.unit])).toEqual([['a', 500, 250], ['b', 520, 260]])
+  })
+
   it('prefers the cheapest shop that has the full quantity', () => {
     const r = rankResults(req, [row('a', x({ unit_price_inr: 300 })), row('b', x({ total_price_inr: 560 })), row('c', x({ unit_price_inr: 260 }))])
     expect(r[0].id).toBe('c')

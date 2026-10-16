@@ -4,8 +4,9 @@
 
 - SIMULATED and REPLAY work end to end on the real Supabase database and were checked in a browser.
 - Metrics, manual labelling, CSV export and all docs are done.
-- LIVE calling is fully implemented to Bolna's documented API, but **no real call was placed**. Your instruction
-  ruled that out, and two things are needed from you first: the Bolna API key and consenting test numbers.
+- LIVE calling is fully implemented. On 2026-10-16 the Bolna account was connected and set up: key, agent ID, the 11
+  extractions (created and tested on a sample transcript). **No real call has been placed.** That still needs
+  consenting test numbers, two agent settings changed in the dashboard (§6), and you present.
 
 ## 1. Features implemented
 
@@ -17,7 +18,7 @@
 | REPLAY mode: sanitised recordings played on their timeline, incl. hold calls | Done | Browser; one sample replay shipped, **recorded from a SIMULATED run** and labelled so |
 | LIVE mode: `POST /call`, webhook, polling fallback, watchdog, concurrency, calling window, daily cap, consent/opt-out re-checked at dial time, no auto-retry | Implemented, **not live-tested** | Integration tests against a **mocked** Bolna + real Supabase; route guards via HTTP |
 | Webhook `/api/bolna/webhook`: shared-secret header, optional IP allowlist, idempotent, out-of-order safe | Done | Unit tests (mocked engine) + integration tests |
-| Post-call extraction parser for Bolna dispositions | Done | Unit tests on the documented shape; definitions in `data/bolna-extractions.json` |
+| Post-call extraction parser for Bolna dispositions | Done | Unit tests on the documented shape **and on a real Bolna response** (`dispositions/test`, no call). The 11 extractions exist on your agent |
 | Deterministic ranking + explanations | Done | Unit tests (missing prices, unit mismatch, partial stock, low confidence, budget, deadline, ties) |
 | "Hold it" reservation call (separate, explicit, confirmed only by the shop) | Done | Integration test; browser (simulated + replay) |
 | Live dashboard: switchboard cards, transcripts, ledger, best-match card | Done | Browser at 1568 px and 375 px |
@@ -60,7 +61,7 @@ the excess is UI and safety checks, which I kept rather than cut.
 
 | Command | Result |
 |---|---|
-| `npm test` (Vitest, 8 files) | **52 passed** |
+| `npm test` (Vitest, 8 files) | **54 passed** |
 | `npm run test:integration` (real Supabase; Bolna mocked in one file) | **15 passed** |
 | `npm run typecheck` | 0 errors |
 | `npm run lint` | 0 problems |
@@ -70,7 +71,9 @@ the excess is UI and safety checks, which I kept rather than cut.
 | HTTP checks | 422 on invalid input; 403 for LIVE while not configured; 401 for webhook without secret; 401 for labels/export without token; 200 with token |
 | Supabase checks | Publishable key gets `42501 permission denied` on every table and on `claim_live_calls`; secret key reads/writes |
 | `npm run replay:export` | Saved the sample replay (6 calls incl. hold) |
-| `npm run bolna -- check` | Not run successfully: needs `BOLNA_API_KEY` |
+| `npm run bolna -- check` (read-only) | Key OK. Trial account: concurrency 2, wallet 500, 0 phone numbers. Prompt uses all four variables, but not `{call_purpose}`. Welcome message says it's an AI. **Total call timeout 300 s, voicemail detection off** (see §6) |
+| `npm run bolna -- setup-extractions --yes` | Created 11 extractions in "Shop Quote"; `check` lists 11, none missing |
+| `npm run bolna -- test-extraction` (no call) | All 11 answers returned for the sample transcript and parsed correctly (test added). Wallet unchanged at 500 |
 
 Bugs the tests caught and that are fixed:
 
@@ -80,6 +83,10 @@ Bugs the tests caught and that are fixed:
   field-by-field comparison.
 - **Out-of-stock shops earned points.** They scored readiness and hold points; now they don't.
 - **"Dolo 650" parsed as quantity 650.** Product-name numbers are now kept in the name.
+- **Back-calculated unit prices (seen in Bolna's real response).** Bolna's model filled `unit_price_inr` 270 from a
+  stated 540 total, despite the prompt. A stated total now sets the unit price.
+- **`check` counted 0 extractions.** The list endpoint returns `{agent_dispositions, global_dispositions}`, not the
+  array its docs show.
 
 An independent code review (read-only subagent) then reported 15 findings. All were verified and fixed, with tests:
 
@@ -130,23 +137,26 @@ REPLAY plays the sample run the same way.
 
 ## 6. What still needs you (credentials, manual setup, verification)
 
-1. **Credentials file not found.** The notepad file was in neither `D:\poochho` nor `D:\` (two sessions checked).
-   - **Supabase:** I copied the publishable and secret keys from your *Bolna Buildathon → Poochho* project into
-     `.env.local`, using the clipboard so they were never printed.
-   - **Bolna:** your existing "poochho" API key is masked in the dashboard. Creating a new key was blocked by the
-     permission policy, so I stopped. Paste your saved key as `BOLNA_API_KEY`, and the Poochho Assistant agent ID as
-     `BOLNA_AGENT_ID`.
+1. **Credentials (done 2026-10-16).** Your `api_keys.txt` was read but not modified. It was untracked in this
+   public repo, so it is now gitignored.
+   - The Bolna key went into `BOLNA_API_KEY`. The file has no agent ID, so it was looked up via the API (one agent,
+     "Poochho Assistant") and saved as `BOLNA_AGENT_ID`. `MAX_CONCURRENCY=2` matches the trial limit.
+   - The Supabase URL and publishable key in the file match `.env.local` (the secret key came from the dashboard).
+   - The database password was not copied: the app doesn't use it.
+   - The file has no Sarvam key, so Sarvam stays untested.
 2. **Migrations** (all three) were applied through the Supabase SQL editor (no DB password or access token was
    available). They are therefore not recorded in `supabase_migrations.schema_migrations`; don't `db push` them
    again.
 3. **Bolna agent setup:** follow `docs/bolna-setup.md`.
-   - Extractions: `npm run bolna -- setup-extractions --yes`, then `test-extraction`.
-   - Webhook URL plus the `x-poochho-secret` header (the value is `BOLNA_WEBHOOK_SECRET` in `.env.local`).
-   - Total call timeout 90 s, voicemail detection on, auto-reschedule off.
-   - The welcome message must say it's an AI.
-   - I made **no changes** to your agent.
+   - Extractions: **done** (created and tested). That is the only change made to your Bolna account.
+   - **Change in the dashboard before live calls:** Total Call Timeout 300 → **90 s** (Engine tab); **Voicemail
+     Detection on** (Calling tab). The API can only change these by rewriting the whole agent, which I didn't risk.
+   - Already right: auto-reschedule off; the welcome message says it's an AI.
+   - Webhook URL plus the `x-poochho-secret` header, once deployed (the value is `BOLNA_WEBHOOK_SECRET` in
+     `.env.local`). Locally, polling covers it.
+   - Optional: use `{call_purpose}` in the prompt so a "Hold it" call asks to reserve (§5 of the guide).
 4. **Consenting test numbers** go in `data/shops.local.json` with consent notes, then run `npm run seed:shops`. On a
-   Bolna trial, those numbers must be verified in Bolna and you should set `MAX_CONCURRENCY=2`.
+   Bolna trial, those numbers must be verified in Bolna (`MAX_CONCURRENCY=2` is already set).
 5. **First live calls (M1/M2/M4)** need you present, 09:00–20:00 IST, `LIVE_CALLS_ENABLED=true`, and the operator
    token (`POOCHHO_ADMIN_TOKEN` in `.env.local`). Verify against the real webhook and extraction shape, then record a
    replay of a real run for the stage fallback.
@@ -166,9 +176,9 @@ npm run test:integration
 
 ## 8. Next steps when you're back (in order)
 
-1. Add `BOLNA_API_KEY` and `BOLNA_AGENT_ID` to `.env.local`, then run `npm run bolna -- check`.
-2. `npm run bolna -- setup-extractions --yes`, then `npm run bolna -- test-extraction`. Confirm the output parses as
-   expected; the shape should match `tests/extraction.test.ts`.
+1. ~~Bolna key, agent ID, extractions~~ (done 2026-10-16).
+2. In the Bolna dashboard: Total Call Timeout **90 s**, Voicemail Detection **on**. Then `npm run bolna -- check`
+   should show no warnings.
 3. Add yourself (and one consenting friend) to `data/shops.local.json`, run `npm run seed:shops`, set
    `LIVE_CALLS_ENABLED=true`, and restart.
 4. **M1:** one live call to your own phone. Watch the card update. Then check `call_events` in Supabase for the raw

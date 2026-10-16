@@ -1,0 +1,115 @@
+{
+  "Shop Quote": {
+    "in_stock": {
+      "subjective": null,
+      "objective": "yes",
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": null,
+      "reasoning_objective": "The shopkeeper confirmed they have the requested item (Amul Butter 500g) in the requested quantity (2 packets).",
+      "validation": null
+    },
+    "unit_price_inr": {
+      "subjective": "270",
+      "objective": null,
+      "confidence": 0.8,
+      "confidence_label": "High",
+      "reasoning_subjective": "The shopkeeper provided the total price for two packets as 540 rupees, so the per-unit price for one packet can be understood as 270 rupees, though it was not explicitly stated as a per-unit price.",
+      "reasoning_objective": null,
+      "validation": {
+        "is_valid": true,
+        "expected_type": "numeric"
+      }
+    },
+    "total_price_inr": {
+      "subjective": "540",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "The shopkeeper explicitly stated the total price for 2 packets as 540 rupees.",
+      "reasoning_objective": null,
+      "validation": {
+        "is_valid": true,
+        "expected_type": "numeric"
+      }
+    },
+    "price_unit": {
+      "subjective": "packet",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "The unit mentioned by the shopkeeper and the customer in the request is 'packet'.",
+      "reasoning_objective": null,
+      "validation": null
+    },
+    "qty_available": {
+      "subjective": "2",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "The shopkeeper confirmed availability of two packets, matching the requested quantity.",
+      "reasoning_objective": null,
+      "validation": {
+        "is_valid": true,
+        "expected_type": "numeric"
+      }
+    },
+    "brand_or_variant": {
+      "subjective": "Amul Butter 500g",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "The shopkeeper confirmed availability of the specific brand and size 'Amul Butter 500g' as asked.",
+      "reasoning_objective": null,
+      "validation": null
+    },
+    "pickup_or_delivery": {
+      "subjective": null,
+      "objective": "pickup",
+      "confidence": 0.9,
+      "confidence_label": "High",
+      "reasoning_subjective": null,
+      "reasoning_objective": "The shopkeeper said they would keep the items and have them ready in 10 minutes, implying pickup at the shop rather than delivery.",
+      "validation": null
+    },
+    "ready_in_minutes": {
+      "subjective": "10",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "Shopkeeper stated the item will be ready in ten minutes.",
+      "reasoning_objective": null,
+      "validation": {
+        "is_valid": true,
+        "expected_type": "numeric"
+      }
+    },
+    "can_hold": {
+      "subjective": null,
+      "objective": "yes",
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": null,
+      "reasoning_objective": "Shopkeeper explicitly agreed to keep the items aside when asked.",
+      "validation": null
+    },
+    "opt_out": {
+      "subjective": null,
+      "objective": "no",
+      "confidence": 0.9,
+      "confidence_label": "High",
+      "reasoning_subjective": null,
+      "reasoning_objective": "There was no request from the shopkeeper to stop calls recorded in the transcript.",
+      "validation": null
+    },
+    "notes": {
+      "subjective": "The shopkeeper agreed to keep the requested 2 packets of Amul Butter 500g ready in 10 minutes for the customer, total price 540 INR.",
+      "objective": null,
+      "confidence": 0.95,
+      "confidence_label": "High",
+      "reasoning_subjective": "All information about availability, price, holding, and readiness time was clearly stated by the shopkeeper.",
+      "reasoning_objective": null,
+      "validation": null
+    }
+  }
+}

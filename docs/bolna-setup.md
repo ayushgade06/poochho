@@ -60,6 +60,13 @@ Poochho accepts only these exact values. Anything else becomes "unsure", "unknow
 Confidence comes from Bolna's own per-extraction `confidence_label`: the weakest label among availability and
 price is used.
 
+**Verified on 2026-10-16** (no call placed): the extractions were created on Poochho Assistant with
+`setup-extractions --yes`. `test-extraction` then returned all 11 answers for the sample transcript, and the wallet
+was unchanged. The real response is saved in `tests/fixtures/bolna-dispositions-test.json` and parsed by
+`tests/extraction.test.ts`. Each answer carries `objective`, `subjective`, `confidence` (0–1), `confidence_label`,
+`reasoning_*` and `validation`. Bolna's model filled `unit_price_inr` = 270 by dividing the stated 540 total, despite
+the prompt. Poochho therefore takes the unit price from a stated total whenever there is one.
+
 ## 3. Webhook
 
 Bolna posts the full execution object on every status change. It does not sign webhooks; its documented trust

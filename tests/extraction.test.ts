@@ -67,3 +67,16 @@ describe('isUsableQuote', () => {
     expect(isUsableQuote(null)).toBe(false)
   })
 })
+
+// REAL provider output: Bolna's POST /v2/agent/{id}/dispositions/test response (2026-10-16) for the sample
+// transcript in scripts/bolna.mjs. Note the model back-calculated unit_price_inr from the stated total.
+import real from './fixtures/bolna-dispositions-test.json'
+
+describe('parseExtraction on a real Bolna response', () => {
+  it('reads every Shop Quote answer and the provider confidence', () => {
+    expect(parseExtraction(real)).toEqual({
+      in_stock: 'yes', unit_price_inr: 270, total_price_inr: 540, price_unit: 'packet', qty_available: 2, brand_or_variant: 'Amul Butter 500g',
+      pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: expect.stringContaining('540'),
+    })
+  })
+})

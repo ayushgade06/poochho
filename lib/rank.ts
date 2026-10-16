@@ -61,10 +61,10 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     const unitMatch = x?.price_unit ? normUnit(x.price_unit) === normUnit(req.unit) : null
     const comparable = unitMatch !== false
     // A per-unit price is only multiplied out when the shop said which unit it was for (500 g × "₹120" is not
-    // ₹60,000). A quoted total for the full quantity it was asked about is used as given.
-    let unit = unitMatch === true ? positive(x?.unit_price_inr) : null
+    // ₹60,000). A quoted total for the full quantity is used as given and sets the unit price: it is what the
+    // customer pays, and Bolna's extraction model has been seen back-calculating a unit price the shop never said.
     const quotedTotal = comparable && stock === 'full' ? positive(x?.total_price_inr) : null
-    if (unit === null && quotedTotal !== null) unit = quotedTotal / q
+    const unit = quotedTotal !== null ? quotedTotal / q : unitMatch === true ? positive(x?.unit_price_inr) : null
     const total = stock === 'full' ? (quotedTotal ?? (unit !== null ? Math.round(unit * q * 100) / 100 : null)) : null
     return { r, x, stock, comparable, unitMatch, unit, total }
   })

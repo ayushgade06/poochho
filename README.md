@@ -158,7 +158,7 @@ Opt-outs live on `shops` and are deliberately **not** deleted.
 | Factor | Points |
 |---|---|
 | Stock | 50 for the full quantity; up to 20 for partial stock; 0 otherwise |
-| Price | 25 × (cheapest verified unit price ÷ this unit price). Unknown price scores 0 |
+| Price | 25 × (cheapest verified unit price ÷ this unit price). A stated total sets the unit price (total ÷ quantity). Unknown price scores 0 |
 | Readiness | 15 if ready now, falling linearly to 0 at two hours. Unknown scores 0 |
 | Hold | 10 if the shop says it can hold the item |
 | Confidence | high × 1.0, medium × 0.85, low × 0.6 (from Bolna's extraction confidence labels) |

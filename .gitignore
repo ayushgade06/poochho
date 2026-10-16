@@ -43,3 +43,6 @@ next-env.d.ts
 
 # real test-shop phone numbers never leave this machine
 data/shops.local.json
+
+# the user's credentials notepad
+api*keys*.txt

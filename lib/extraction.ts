@@ -80,7 +80,7 @@ export function parseExtraction(raw: unknown): Extraction | null {
   // Explicit confidence field if configured; otherwise the weakest provider confidence among the answers that
   // drive ranking (availability and the quoted price). No signal at all means "low".
   const explicit = word('confidence')
-  const derived = ['in_stock', x.unit_price_inr !== null ? 'unit_price_inr' : 'total_price_inr'].map(conf).filter(Boolean)
+  const derived = ['in_stock', x.total_price_inr !== null ? 'total_price_inr' : 'unit_price_inr'].map(conf).filter(Boolean)
   x.confidence =
     explicit === 'high' ? 'high'
     : ['med', 'medium'].includes(explicit) ? 'med'
