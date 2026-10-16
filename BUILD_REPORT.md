@@ -4,9 +4,9 @@
 
 - SIMULATED and REPLAY work end to end on the real Supabase database and were checked in a browser.
 - Metrics, manual labelling, CSV export and all docs are done.
-- LIVE calling is fully implemented. On 2026-10-16 the Bolna account was connected and set up: key, agent ID, the 11
-  extractions (created and tested on a sample transcript). **No real call has been placed.** That still needs
-  consenting test numbers, two agent settings changed in the dashboard (§6), and you present.
+- LIVE calling works end to end. On 2026-10-16 you placed the first real call (one consenting test number,
+  electronics). It went through dispatch, polling, extraction and ranking, and the follow-up "Hold it" call was placed
+  too. The agent problems it revealed are fixed in the prompt and settings (§6a); a second live call should confirm them.
 
 ## 1. Features implemented
 
@@ -16,7 +16,7 @@
 | Review step: exactly which shops will be called; LIVE needs operator token + consent checkbox | Done | Browser (simulated and LIVE review screens) |
 | SIMULATED mode: scripted calls in Bolna's payload shape through the real pipeline | Done | Integration tests (real Supabase); browser |
 | REPLAY mode: sanitised recordings played on their timeline, incl. hold calls | Done | Browser; one sample replay shipped, **recorded from a SIMULATED run** and labelled so |
-| LIVE mode: `POST /call`, webhook, polling fallback, watchdog, concurrency, calling window, daily cap, consent/opt-out re-checked at dial time, no auto-retry | Implemented, **not live-tested** | Integration tests against a **mocked** Bolna + real Supabase; route guards via HTTP |
+| LIVE mode: `POST /call`, webhook, polling fallback, watchdog, concurrency, calling window, daily cap, consent/opt-out re-checked at dial time, no auto-retry | Done; **one real call** so far | Integration tests against a mocked Bolna + real Supabase; first real call 2026-10-16 (§6a) |
 | Webhook `/api/bolna/webhook`: shared-secret header, optional IP allowlist, idempotent, out-of-order safe | Done | Unit tests (mocked engine) + integration tests |
 | Post-call extraction parser for Bolna dispositions | Done | Unit tests on the documented shape **and on a real Bolna response** (`dispositions/test`, no call). The 11 extractions exist on your agent |
 | Deterministic ranking + explanations | Done | Unit tests (missing prices, unit mismatch, partial stock, low confidence, budget, deadline, ties) |
@@ -163,6 +163,23 @@ REPLAY plays the sample run the same way.
 6. **Sarvam** (optional): add `SARVAM_API_KEY` to switch voice input/output from browser speech to Sarvam; untested so far.
 7. **Hindi review:** the prompt suggestions in `docs/bolna-setup.md` and the Hindi summary and simulated lines should be
    checked by a native speaker.
+
+## 6a. First live call (2026-10-16)
+
+One quote call (78 s, completed) and one "Hold it" call to the consenting test number. Nothing failed in Poochho itself:
+the call was dialled, tracked by polling (no webhook locally), extracted and ranked. In stock, ready in 10 min and
+can hold were all right. The problems were in the agent:
+
+| What you heard | Cause | Fix |
+|---|---|---|
+| "bol raha/rahi hoon" | Literally in the welcome message | New welcome message (`data/bolna-welcome.txt`) |
+| Unclear pronunciation, "ek tukda", "Samajh gaya" | Roman-letter Hindi, no gender or wording rules | Prompt: Devanagari, feminine forms, everyday shop English; voice speed 0.9 |
+| Product name hard to follow | `{item}` was "boAt Airdopes 141 (Black)" | Sent as "boAt Airdopes 141, Black"; prompt says model numbers digit by digit |
+| ₹1,299 recorded as ₹1,200 | Turn ended after a 200 ms pause mid-number; the price was not confirmed | Endpointing 500 ms; the agent now asks "बारह सौ निन्यानवे रुपये, सही?" |
+| "Namaste" at the end | Final Call Message in Roman letters with "Namaste!"; open-ended closing | Devanagari final message; short scripted closings |
+| Hold call went off-script in English | "Already" auto-switched the call to English, whose prompt was **empty**; no hold section | English prompt filled; switch only on request; Section 4A for `{call_purpose}` = hold |
+
+Details: `docs/bolna-setup.md` §4–5. Cost of both calls: 15 wallet units (500 → 485).
 
 ## 7. Start it locally
 

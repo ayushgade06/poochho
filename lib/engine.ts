@@ -3,7 +3,7 @@ import replays from '@/data/replays.json'
 import { BolnaHttpError, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
 import { cfg, inCallingWindow, liveBlockers } from './config'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
-import { DEMO_SHOPS, holdScript, quoteScript } from './sim'
+import { DEMO_SHOPS, holdScript, itemLabel, quoteScript } from './sim'
 import { ACTIVE, mergeEvent } from './state'
 import type { CallStatus, Execution, ProviderEvent, PublicExecution, ScriptEvent, SearchRequest, SearchState } from './types'
 import type { NewSearch } from './validate'
@@ -191,7 +191,7 @@ async function dial(q: Row) {
   if (!callable(shop)) return applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: shop is no longer eligible (consent or opt-out)' }, 'dispatch')
   const vars = {
     shop_name: shop.name,
-    item: req.brand_or_variant ? `${req.product} (${req.brand_or_variant})` : req.product,
+    item: itemLabel(req),
     quantity: `${req.quantity} ${req.unit}`,
     customer_area: req.area,
     call_purpose: q.kind === 'hold' ? 'hold' : 'quote',

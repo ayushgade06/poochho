@@ -85,31 +85,46 @@ check the sender's IP.
 **Local development:** Bolna cannot reach `localhost`. Poochho polls `GET /executions/{id}` every 5 seconds while
 a search page is open, so LIVE mode still works locally without a tunnel. Webhooks only make updates faster.
 
-## 4. Recommended agent settings
+## 4. Agent settings (applied 2026-10-16 after the first live call)
 
 | Where | Setting | Value | Why |
 |---|---|---|---|
-| Agent tab | Welcome message | must say it is an AI, e.g. `नमस्ते, मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ।` | Your prompt's Section 2 assumes the welcome message discloses the AI |
+| Agent tab | Welcome message | `data/bolna-welcome.txt`: Devanagari, feminine, says it is an AI | The first live call read "bol raha/rahi hoon" literally, and Roman-letter Hindi set the style for the whole call |
+| Agent tab | Prompt, **Hindi and English tabs** | `data/bolna-prompt.md` (see §5) | Calls use the per-language prompt. The English one was empty, so a call that switched to English improvised |
+| Languages tab | Move to English when | the caller requested for it | Shopkeepers mix in English words ("already", model numbers); auto-detection flipped the call to the English setup |
+| Languages tab → Voice → Advanced | Hindi voice speed rate | `0.9` | Product names and prices are easier to follow on a phone line |
+| Engine tab | Endpointing | `500` ms | At 200 ms a short pause ended the turn mid-number: "₹1,299" was heard as "one thousand two" |
+| Engine tab | Final Call Message (Hindi) | `आपके समय के लिए बहुत धन्यवाद, आपका दिन अच्छा हो.` | It was Roman-letter Hindi ending in "Namaste!" |
 | Engine tab | Total Call Timeout | `90` s | Spec: 90 s maximum per call |
-| Engine tab | Hangup on User Silence | `10` s | Ends dead calls quickly |
+| Engine tab | Hangup on User Silence | `15` s | Ends dead calls |
 | Calling tab | Voicemail Detection | on | Voicemail is recorded as a failure, never as an answer |
-| Calling tab | Outbound call timing restrictions | 9–20 | Matches `CALL_WINDOW_IST`. Poochho also refuses to dial outside it |
 | Calling tab | Auto Reschedule | off | Poochho never follows up later on its own |
+| Calling tab | Outbound call timing restrictions | off | Poochho refuses to dial outside `CALL_WINDOW_IST` itself |
+
+`npm run bolna -- check` verifies the timeout, voicemail, language switching and that both prompts and the welcome
+message match the files in `data/`.
 
 Poochho never sends `retry_config`, so Bolna does not retry calls. If Bolna reports `rescheduled`, Poochho marks the
 call failed and keeps asking Bolna to stop it while the search page is open. Stopping only works while the call is
 queued or scheduled, so keep Bolna's own timing restriction off or wider than `CALL_WINDOW_IST`.
 
-## 5. Prompt suggestions (optional; have a native speaker review them)
+## 5. Agent prompt
 
-1. **Quote calls should not reserve by accident.** Section 4 Q2 currently asks "क्या आप इस {item} को हमारे customer के
-   लिए रख सकते हैं?". A shopkeeper may treat that as a reservation on every quote call. A hypothetical form keeps
-   reservations for the explicit "Hold it" call: `अगर customer लेना चाहें, तो क्या आप इसे थोड़ी देर के लिए रख पाएंगे? और कितनी जल्दी ready हो सकता है?`
-2. **Reservation calls.** Poochho passes `{call_purpose}` = `quote` or `hold`. Add near the top: `अगर {call_purpose} "hold" है, तो बताइए
-   कि customer ने यह item लेने का फ़ैसला किया है और पूछिए कि क्या shop इसे customer के लिए रख देगी।` Alternatively, create a separate
-   agent for holds and set `BOLNA_HOLD_AGENT_ID`.
-3. Fix `{{quantity}}` in Section 4 Q1 to `{quantity}` for consistency. Bolna accepts both forms, but an unresolved
-   `{{x}}` is read out literally while `{x}` renders as empty.
+The reference copy is `data/bolna-prompt.md`; the dashboard's original is in git history (commit "Snapshot the
+Bolna agent's welcome message and prompt"). Changes made after the first live call:
+
+- Feminine first person throughout; all Hindi in Devanagari (the voice mispronounces Roman-letter Hindi); everyday
+  shop English kept as is ("एक piece", not "एक टुकड़ा"); the brand written as पूछो so it is pronounced right.
+- Model numbers digit by digit ("one four one"), prices in Hindi words ("बारह सौ निन्यानवे रुपये"), no brackets read aloud.
+  Poochho now sends `{item}` as `boAt Airdopes 141, Black` instead of `boAt Airdopes 141 (Black)`.
+- The price is confirmed back once as a question, so a misheard amount can be corrected; a cut-off price is asked again.
+- Quote calls ask whether the shop *could* hold the item; the separate "Hold it" call (`{call_purpose}` = `hold`) has
+  its own section, Section 4A.
+- Short closings without a recap and without "Namaste"; no promised callbacks.
+
+**To change it:** edit `data/bolna-prompt.md`, paste it into **both** the Hindi and English tabs of the prompt editor
+(Agent tab), save, and run `npm run bolna -- check`. Don't set it through the API: on a multilingual agent the API's
+`agent_prompts` is not what calls use, and every dashboard save rewrites it. Have a native speaker review the Hindi.
 
 ## 6. Trial-account limits
 

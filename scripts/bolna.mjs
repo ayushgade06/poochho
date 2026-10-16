@@ -30,6 +30,15 @@ if (cmd === 'check') {
   console.log(`  welcome message says it is an AI: ${/\bAI\b/.test(agent.agent_welcome_message ?? '') ? 'yes' : 'NO (required; see docs/bolna-setup.md §4)'}`)
   const tc = agent.tasks?.[0]?.task_config ?? {}
   console.log(`  total call timeout: ${tc.call_terminate ?? '?'} s${tc.call_terminate > 90 ? ' (spec: 90 s, Engine tab)' : ''} · voicemail detection: ${tc.voicemail ? 'on' : 'OFF (turn on, Calling tab)'} · auto-reschedule: ${tc.auto_reschedule ? 'ON (turn off)' : 'off'}`)
+  // A multilingual agent runs each call on its per-language prompt, which only the dashboard editor changes
+  // (it also rewrites the base prompt on every save). data/ holds the reference copy.
+  const ml = agent.tasks?.[0]?.tools_config?.multilingual_config
+  const norm = (s) => (s ?? '').replace(/\s+/g, ' ').trim()
+  const repo = (f) => norm(readFileSync(new URL(`../data/${f}`, import.meta.url), 'utf8'))
+  const prompts = ml?.enabled ? Object.entries(ml.languages).map(([l, v]) => [l, v.system_prompt]) : [['base', agent.agent_prompts?.task_1?.system_prompt]]
+  for (const [l, p] of prompts) console.log(`  prompt (${l}) matches data/bolna-prompt.md: ${norm(p) === repo('bolna-prompt.md') ? 'yes' : norm(p) ? 'NO (edited in the dashboard?)' : 'NO, EMPTY'}`)
+  console.log(`  welcome message matches data/bolna-welcome.txt: ${norm(agent.agent_welcome_message) === repo('bolna-welcome.txt') ? 'yes' : 'NO'}`)
+  if (ml?.enabled) console.log(`  language switching: ${ml.language_switch_trigger}${ml.language_switch_trigger === 'caller_requested' ? '' : ' (set "the caller requested for it", Languages tab)'}`)
   console.log(`  webhook URL set: ${agent.agent_config?.webhook_url ?? agent.webhook_url ? 'yes' : 'not visible via API (check the Extractions tab)'}`)
   const dispositions = await api(`/dispositions/?agent_id=${AGENT}`).catch((e) => (console.log(`  extractions: ${e.message}`), null))
   if (dispositions) {

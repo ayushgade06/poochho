@@ -19,6 +19,8 @@ type Req = Pick<SearchRequest, 'product' | 'brand_or_variant' | 'category' | 'qu
 
 const RANGES: Record<string, [number, number]> = { grocery: [40, 400], pharmacy: [30, 450], hardware: [80, 1200], electronics: [300, 3000], stationery: [10, 150] }
 const round5 = (n: number) => Math.max(5, Math.round(n / 5) * 5)
+// What the agent says. A comma, not brackets: the voice reads "boAt Airdopes 141, Black" with a natural pause.
+export const itemLabel = (r: Pick<SearchRequest, 'product' | 'brand_or_variant'>) => (r.brand_or_variant ? `${r.product}, ${r.brand_or_variant}` : r.product)
 
 // Deterministic simulated unit price: product-name hash within a category range. Clearly fictional.
 export function simUnitPrice(product: string, category: string | null) {
@@ -91,7 +93,7 @@ export function quoteScript(shop: DemoShop, req: Req, providerId: string): Scrip
   const s = shop.sim
   if (s.outcome !== 'quote') return timeline(providerId, s, null)
   const L = lines(req.language)
-  const item = req.brand_or_variant ? `${req.product} (${req.brand_or_variant})` : req.product
+  const item = itemLabel(req)
   const q = `${req.quantity} ${req.unit}`
   const unit = s.priceFactor ? round5(simUnitPrice(req.product, req.category) * s.priceFactor) : null
   const stock = s.stock ?? 'yes'
@@ -119,7 +121,7 @@ export function quoteScript(shop: DemoShop, req: Req, providerId: string): Scrip
 
 export function holdScript(shop: DemoShop, req: Req, providerId: string): ScriptEvent[] {
   const L = lines(req.language)
-  const item = req.brand_or_variant ? `${req.product} (${req.brand_or_variant})` : req.product
+  const item = itemLabel(req)
   const q = `${req.quantity} ${req.unit}`
   const ok = shop.sim.hold === 'yes'
   const t: [boolean, string][] = [[true, L.reserve(item, q, req.area)], [false, ok ? L.reserved : L.unsure], [true, L.bye]]
