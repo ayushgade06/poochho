@@ -8,7 +8,7 @@ import { DEMO_SHOPS } from '@/lib/sim'
 
 const created: string[] = []
 const TEST_SHOP = 'zz-test-live-shop'
-const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null }
+const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null }
 const five = ['demo-sharma-kirana', 'demo-gupta-general', 'demo-patil-provision', 'demo-new-bharat', 'demo-mehta-general']
 
 // Make every scripted step due now, instead of waiting ~25 s of simulated call time.
@@ -65,7 +65,8 @@ describe('SIMULATED search end to end', () => {
     const s = (await getSearch(id))!
     const by = Object.fromEntries(s.executions.map((e) => [e.shop_id, e]))
     expect(by['demo-sharma-kirana'].extracted?.stock_quote).toBe('हाँ है, 2 packet मिल जाएगा.')
-    expect(by['demo-patil-provision'].extracted?.stock_quote).toBe('अभी सिर्फ 1 packet है.')
+    expect(by['demo-patil-provision'].extracted?.stock_quote).toBe('आत्ता फक्त 1 packet आहे.') // a Marathi-speaking shop, called in Marathi
+    expect([by['demo-patil-provision'].language, by['demo-sharma-kirana'].language]).toEqual(['mr', 'hi'])
     expect(by['demo-sharma-kirana'].cost_cents).toBeNull() // simulated calls cost nothing
     // An extraction that claims words the shop never said: the quote is dropped on the way out.
     const req = await db().from('search_requests').insert({ ...base }).select('id').single()

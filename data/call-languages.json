@@ -1,0 +1,14 @@
+{
+  "hi": {
+    "name": "हिन्दी",
+    "greeting": "नमस्ते, मैं पूछो की AI assistant बोल रही हूँ, एक customer की तरफ़ से call कर रही हूँ. यह call record हो रही है. क्या आप एक minute बात कर सकते हैं?"
+  },
+  "en": {
+    "name": "English",
+    "greeting": "Hello, I'm Poochho's AI assistant, calling on behalf of a customer. This call is recorded. Do you have a minute?"
+  },
+  "mr": {
+    "name": "मराठी",
+    "greeting": "नमस्कार, मी पूछोची AI assistant बोलत आहे, एका customer च्या वतीने call करत आहे. हा call record होत आहे. तुम्ही एक minute बोलू शकता का?"
+  }
+}

@@ -2,10 +2,10 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type VoiceLang } from '@/lib/types'
+import { CALL_LANGS, callLanguage, CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type VoiceLang } from '@/lib/types'
 import { qtyLabel } from '@/lib/rank'
 import { parseSpokenRequest } from '@/lib/voice'
-import { field, label, ModeBanner, token, voiceLang } from './ui'
+import { field, label, ModeBanner, token } from './ui'
 
 type Config = {
   live: { blockers: string[]; inWindow: boolean; window: string }
@@ -80,7 +80,7 @@ export default function SearchForm() {
     const body =
       mode === 'replay'
         ? { mode, replay_id: replayId }
-        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null }
+        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null, asked_in: heard?.lang ?? null }
     if (mode === 'live') token.set(op)
     try {
       const r = await fetch('/api/searches', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(mode === 'live' ? { 'x-admin-token': op } : {}) }, body: JSON.stringify(body) })
@@ -103,7 +103,6 @@ export default function SearchForm() {
     const p: Record<string, string | number> = sarvam?.fields ?? parseSpokenRequest(text)
     const filled = (Object.keys(EMPTY) as (keyof typeof EMPTY)[]).filter((k) => p[k] !== undefined && k !== 'language')
     const lang = sarvam?.language
-    if (lang) voiceLang.set(lang)
     setF((prev) => ({ ...prev, ...Object.fromEntries(filled.map((k) => [k, String(p[k])])), ...(lang === 'en-IN' ? { language: 'en' as Lang } : lang === 'hi-IN' ? { language: 'hi' as Lang } : {}) }))
     setErrors({})
     setHeard({ text, filled: filled.map((k) => k.replace(/_/g, ' ')), lang })
@@ -217,7 +216,7 @@ export default function SearchForm() {
               </select>
             </Field>
             <fieldset className="col-span-6">
-              <legend className={label}>Call the shops in</legend>
+              <legend className={label}>Call the shops in (each shop is called in its own language when the assistant speaks it)</legend>
               <div className="inline-flex rounded-xl border border-line bg-white p-1">
                 {(Object.keys(LANGS) as Lang[]).map((l) => (
                   <label key={l} className={`cursor-pointer rounded-lg px-5 py-2 font-semibold ${f.language === l ? 'bg-ink text-paper' : 'text-muted'}`}>
@@ -252,7 +251,7 @@ export default function SearchForm() {
           {f.brand_or_variant && <span className="text-muted"> ({f.brand_or_variant})</span>}
         </h2>
         <p className="mt-1 text-muted">
-          Near {f.area}, {f.city} · in {LANGS[f.language]}
+          Near {f.area}, {f.city}
           {f.need_within_minutes && ` · ready within ${f.need_within_minutes} min`}
           {f.max_budget_inr && ` · up to ₹${f.max_budget_inr}`}
         </p>
@@ -279,7 +278,7 @@ export default function SearchForm() {
                     <span>
                       <span className="block font-semibold">{s.name}</span>
                       <span className="text-sm text-muted">
-                        {s.area} · {s.note}
+                        {s.area} · {s.note} · called in {CALL_LANGS[callLanguage(s.language, f.language)].name}
                       </span>
                     </span>
                   </label>

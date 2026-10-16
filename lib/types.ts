@@ -1,12 +1,21 @@
+import callLangs from '@/data/call-languages.json'
+
 export const MODES = ['simulated', 'live', 'replay'] as const
 export type Mode = (typeof MODES)[number]
 
-// Languages the configured Bolna agent speaks (Agent Studio → Languages: Hindi default, English).
+// The request's language: the summary's language, and the call language for shops whose own language the agent
+// doesn't speak.
 export const LANGS = { hi: 'Hindi', en: 'English' } as const
 export type Lang = keyof typeof LANGS
 
-// Languages the user can speak to Poochho and hear the summary in (Sarvam saaras STT + bulbul TTS). Shops are
-// still called in Hindi or English; other languages are machine-translated for the user only.
+// Every language the Bolna agent can place a call in (its multilingual_config languages; `npm run bolna -- check`
+// compares the two), with the greeting each call opens with. Bolna refuses a call in any other language.
+export const CALL_LANGS: Record<string, { name: string; greeting: string }> = callLangs
+// A shop is called in its own language when the agent speaks it, otherwise in the request's language.
+export const callLanguage = (shopLang: string, requestLang: string) => (Object.hasOwn(CALL_LANGS, shopLang) ? shopLang : requestLang)
+
+// Languages the user can speak to Poochho and hear the summary in (Sarvam saaras STT + bulbul TTS). Languages
+// other than Hindi and English are machine-translated for the user.
 export const VOICE_LANGS = {
   'hi-IN': 'हिन्दी', 'en-IN': 'English', 'mr-IN': 'मराठी', 'bn-IN': 'বাংলা', 'ta-IN': 'தமிழ்', 'te-IN': 'తెలుగు',
   'kn-IN': 'ಕನ್ನಡ', 'ml-IN': 'മലയാളം', 'gu-IN': 'ગુજરાતી', 'pa-IN': 'ਪੰਜਾਬੀ', 'od-IN': 'ଓଡ଼ିଆ',
@@ -50,6 +59,7 @@ export type SearchRequest = {
   max_budget_inr: number | null
   need_within_minutes: number | null
   constraints: string | null
+  asked_in: VoiceLang | null // the language the user spoke the request in, if they spoke it (Sarvam-detected)
   replay_of: string | null
   created_at: string
 }
@@ -82,6 +92,7 @@ export type Execution = {
   shop_id: string
   kind: CallKind
   mode: Mode
+  language: string | null // what the call was placed in; null on calls made before this was recorded
   status: CallStatus
   provider_execution_id: string | null
   provider_status: string | null

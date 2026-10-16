@@ -22,7 +22,12 @@ and Sarvam detects Marathi, transcribes it (`saaras:v4`), and `sarvam-105b-conve
 product, quantity, unit, category, city and area. The model's output is reduced to known fields and enum values, and
 you review every field before anything is called. Afterwards, hear the summary in Hindi, English, Marathi, Bengali,
 Tamil, Telugu, Kannada, Malayalam, Gujarati, Punjabi or Odia: Sarvam Translate plus Bulbul, labelled
-machine-translated. Shops are still called in Hindi or English.
+machine-translated.
+
+**Each shop is called in its own language.** The agent speaks Hindi, English and Marathi (Marathi on Sarvam's
+`saaras:v4` and `bulbul:v4-flash`); a shop is called in its language when the agent speaks it, otherwise in the
+request's. So: you ask in Tamil → a Pune shop is called in Marathi → you hear the answer in Tamil. The results page
+shows that loop. The list of call languages and each language's opening line live in `data/call-languages.json`.
 
 ## Modes
 
@@ -60,6 +65,11 @@ flowchart LR
   - Transcripts and durations only grow.
   - Duplicates are no-ops.
   - Merges use optimistic concurrency (a `version` column), so concurrent webhooks cannot lose updates.
+- **One language list.** `data/call-languages.json` lists the languages the agent can call in, with the greeting
+  each call opens with (the agent's welcome message is just `{greeting}`; Bolna keeps a single welcome text). Each
+  call's language is decided once, when the search is created, stored on the call, and sent as
+  `agent_data.language`. Bolna refuses a language the agent isn't configured for; `npm run bolna -- check` compares
+  the two lists.
 - **No double dialling.** `claim_live_calls()` (SQL, advisory lock) claims queued calls atomically and never
   exceeds `MAX_CONCURRENCY` in flight; recent timeouts still count as in flight. Calls left queued for more than
   10 minutes expire rather than dial late.
@@ -111,7 +121,7 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 | `NEXT_PUBLIC_SUPABASE_URL` | all | Project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | all | Browser key; used only for Realtime pings (it can read no table) |
 | `SUPABASE_SECRET_KEY` | all | **Server only.** Bypasses RLS. Never prefix with `NEXT_PUBLIC_` |
-| `BOLNA_API_KEY`, `BOLNA_AGENT_ID` | LIVE | `BOLNA_HOLD_AGENT_ID` optional (defaults to the main agent) |
+| `BOLNA_API_KEY`, `BOLNA_AGENT_ID` | LIVE | One agent places quote and "Hold it" calls (`{call_purpose}`) in every call language |
 | `BOLNA_FROM_NUMBER` | optional | Caller ID from your Bolna account |
 | `BOLNA_WEBHOOK_SECRET` | LIVE | Sent by Bolna in the `x-poochho-secret` header (header only, never in the URL) |
 | `BOLNA_WEBHOOK_IPS` | optional | Source-IP allowlist |
@@ -126,13 +136,15 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 
 ## Database
 
-Four migrations in `supabase/migrations/`:
+Five migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
 - **`20261016020000_review_fixes.sql`**: an opt-out trigger that records an opt-out in the same write as the
   call update; queue expiry; timeouts counted in concurrency.
 - **`20261016030000_call_cost.sql`**: `call_executions.cost_cents`, what Bolna charged per call in US cents.
+- **`20261016040000_call_language.sql`**: `call_executions.language` (what each call was placed in) and
+  `search_requests.asked_in` (the language the user spoke the request in).
 
 Tables:
 
@@ -203,8 +215,8 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 70 unit tests (validation, extraction and the quote check, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, Bolna payload parsing, webhook and recording routes with mocked dependencies) |
-| `npm run test:integration` | 16 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
+| `npm test` | 73 unit tests (validation, extraction and the quote check, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook and recording routes with mocked dependencies) |
+| `npm run test:integration` | 17 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |
@@ -242,4 +254,5 @@ Rules:
 - Sarvam STT, form filling, translation and TTS were verified against the live API on 2026-10-16 (Marathi and
   Tamil). The browser speech fallback depends on the browser.
 - Shop discovery via Google Places is not implemented. Only consenting test shops can be called.
-- Hindi strings were written by the developer and need review by a native speaker.
+- Hindi and Marathi strings (prompts, greetings, simulated lines) were written by the developer and need review by a
+  native speaker. No real call has been made in Marathi yet.

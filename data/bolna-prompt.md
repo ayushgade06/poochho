@@ -294,6 +294,11 @@ After answering any FAQ, the agent must return to the exact flow anchor. Follow 
 - Keywords: ["price kam karo", "discount", "special price", "negotiate", "haggle", "kam rupees"]
 - Answer: मैं discount की बात नहीं कर सकती, पर आपकी price customer को बता दूँगी.
 
+**FAQ 10:** यह call record क्यों हो रही है?
+- Keywords: ["record क्यों", "recording क्यों", "record मत करो", "why are you recording", "recording band karo"]
+- Answer: यह call सिर्फ़ इसलिए record होती है ताकि आपके जवाब सही note हों.
+- If the shopkeeper objects to the recording, do not argue: proceed to Section 5 [CLOSING], Branch B [SHOPKEEPER DECLINED OR UNAVAILABLE].
+
 # SECTION 7: VARIABLES REFERENCE
 
 ## Preloaded Variables

@@ -19,15 +19,17 @@ async function bolna(path: string, init: RequestInit = {}) {
   return body
 }
 
-// Variables match the "Poochho Assistant" prompt in Agent Studio: {shop_name} {item} {quantity} {customer_area}.
-// No retry_config is sent, so Bolna never retries on its own (retries need explicit user action).
-export async function startCall(to: string, vars: Record<string, string>, language: string, agentId = process.env.BOLNA_AGENT_ID) {
+// Variables match the "Poochho Assistant" prompt in Agent Studio: {greeting} (the welcome message), {shop_name},
+// {item}, {quantity}, {customer_area}, {call_purpose}. No retry_config is sent, so Bolna never retries on its own.
+export async function startCall(to: string, vars: Record<string, string>, language: string) {
   const body = {
-    agent_id: agentId,
+    agent_id: process.env.BOLNA_AGENT_ID,
     recipient_phone_number: to,
     ...(process.env.BOLNA_FROM_NUMBER ? { from_phone_number: process.env.BOLNA_FROM_NUMBER } : {}),
-    // agent_language picks the starting language on multilingual agents; Hindi is the agent default.
-    user_data: { ...vars, timezone: 'Asia/Kolkata', ...(language !== 'hi' ? { agent_language: language } : {}) },
+    // Starts the multilingual agent in this language: its transcriber, voice and prompt together. Bolna refuses (400)
+    // a language the agent isn't configured for, so only CALL_LANGS keys are ever sent.
+    agent_data: { language },
+    user_data: { ...vars, timezone: 'Asia/Kolkata' },
   }
   const r = await bolna('/call', { method: 'POST', body: JSON.stringify(body) })
   if (typeof r?.execution_id !== 'string') throw new Error('Bolna accepted the call but returned no execution_id')

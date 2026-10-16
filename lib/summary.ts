@@ -1,5 +1,5 @@
 import { qtyLabel, rankResults, type Ranked } from './rank'
-import type { Lang, PublicExecution, SearchRequest, SearchState } from './types'
+import { CALL_LANGS, type Lang, type PublicExecution, type SearchRequest, type SearchState } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
 export type HoldOutcome = 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown'
@@ -53,6 +53,10 @@ export function searchSummary(s: SearchState, lang: Lang = s.request.language) {
   const h = shopId ? s.executions.find((e) => e.kind === 'hold' && e.shop_id === shopId) : undefined
   return summarize(s.request, ranked, lang, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
 }
+
+// The languages a search's shops were called in, e.g. "हिन्दी, मराठी" (older calls: the request's language).
+export const calledIn = (s: SearchState) =>
+  [...new Set(s.executions.filter((e) => e.kind === 'quote').map((e) => e.language ?? s.request.language))].map((l) => CALL_LANGS[l]?.name ?? l).join(', ')
 
 // "14:05" in India time, whatever the viewer's time zone.
 export const istTime = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })

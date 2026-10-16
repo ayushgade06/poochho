@@ -8,7 +8,8 @@
   electronics). It went through dispatch, polling, extraction and ranking, and the follow-up "Hold it" call was placed
   too. The agent problems it revealed are fixed in the prompt and settings (§6a); a second live call should confirm them.
 - Buildathon milestones (§9): **M1 done** (availability first; the shopkeeper's own words, freshness, recordings and
-  cost behind every answer).
+  cost behind every answer). **M3 done** apart from a real Marathi call (each shop called in its own language; the
+  agent now speaks Marathi). **M2 waits for the Kaggle dataset.**
 
 ## 1. Features implemented
 
@@ -63,8 +64,8 @@ the excess is UI and safety checks, which I kept rather than cut.
 
 | Command | Result |
 |---|---|
-| `npm test` (Vitest, 10 files) | **70 passed** (after M1) |
-| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **16 passed** (after M1) |
+| `npm test` (Vitest, 11 files) | **73 passed** (after M3) |
+| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **17 passed** (after M3) |
 | `npm run typecheck` | 0 errors |
 | `npm run lint` | 0 problems |
 | `npm run build` | **Succeeds** (Next.js 16.4.1, Turbopack): `/` static; API routes dynamic; `/metrics` and `/search/[id]` partial prerender |
@@ -239,3 +240,20 @@ had crashed with "Jest worker encountered 2 child process exceptions"; it was le
   it, in Hindi. M3 (Marathi) has to account for this.
 - The prompt has no FAQ for "why is this call recorded?"; the agent would give its "I don't have that information"
   line. It will be added with the M2 prompt edit, which touches both tabs anyway.
+
+### M3: call each shop in its own language (2026-10-16, done except a real Marathi call)
+
+Goal: you ask in Tamil → a Pune shop is called in Marathi → you hear the answer in Tamil.
+
+| Change | Where | How it was verified |
+|---|---|---|
+| Bolna's docs (read 2026-10-16): `agent_data.language` starts a multilingual agent in a language (its transcriber, voice and prompt together); `/call` answers **400** for a language the agent doesn't have; the welcome text is one string for all languages, and Bolna suggests a variable for localized greetings. There are no per-call transcriber keywords, so the product name isn't passed | `lib/bolna.ts` (`startCall` sends `agent_data.language`) | Mocked-Bolna integration test checks the request body |
+| One language list, `data/call-languages.json` (hi, en, mr), with each language's opening line. The agent's welcome message is now `{greeting}`, and Poochho sends the greeting in the call's language: it says it is an AI and that the call is recorded. This also fixes English calls opening in Hindi | `data/call-languages.json`, `lib/types.ts` (`CALL_LANGS`, `callLanguage`), `lib/engine.ts` (`dial`) | Unit test: every greeting discloses AI and recording, and the welcome file is `{greeting}`. `npm run bolna -- check` |
+| Each call's language is decided when the search is created (the shop's language if the agent speaks it, else the request's) and stored on the call; hold calls reuse it. The request stores the language the user spoke (`asked_in`) | `lib/engine.ts`, migration `20261016040000_call_language.sql` (applied in the SQL editor and checked: text columns, RLS on, `anon` can't read) | Unit test for the choice and fallback; integration test: a Marathi shop gets `mr`, a Tamil shop falls back to `hi`, each with its greeting |
+| Bolna agent: Marathi added (Sarvam `bulbul:v4-flash` "Ishita (Conversational)", Sarvam `saaras:v4` with a shop-call context and keywords). Marathi prompt tab = `data/bolna-prompt-mr.md`: the Hindi prompt with every spoken line and keyword list in Marathi, feminine forms, Devanagari, shop English kept. Both prompts gained an FAQ for "why is this call recorded?" | Bolna dashboard (pasted with Ctrl+V), `data/bolna-prompt*.md` | `bolna check`: all three prompts match their files, languages en/hi/mr present. The API shows Marathi on Sarvam. Bolna's `dispositions/test` on a Marathi transcript (no call; wallet unchanged at 485) returned every answer right, including the quote "हो आहे, दोन packet मिळतील." verbatim |
+| `npm run bolna -- check` now reports the agent's languages against `data/call-languages.json`, each language's prompt against `data/bolna-prompt-<lang>.md` (or `bolna-prompt.md`), and callable shops whose language the agent doesn't speak | `scripts/bolna.mjs` | Run against the live agent |
+| SIMULATED: Patil Provision (Shivaji Nagar) speaks Marathi, with Marathi scripted lines. Simulated calls open with the real greeting. "called in मराठी" on the review step and every card; the results page shows "Asked in தமிழ் → shops called in हिन्दी, मराठी → summary in தமிழ்", and the summary picker defaults to the language the user spoke | `data/shops.json`, `lib/sim.ts`, `components/*` | Browser (production build, desktop and 390 px); the Tamil summary came back translated through Sarvam. The sample replay was re-recorded and keeps each call's language |
+
+**Needs a native speaker's review:** the Marathi prompt, the Marathi greeting and the Marathi simulated lines
+(also the Hindi ones, as before). **A real Marathi call waits for you.** Tamil gets added only once Marathi works end
+to end.

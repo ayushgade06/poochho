@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useSyncExternalStore } from 'react'
+import { useState } from 'react'
 import { centsToInr } from '@/lib/metrics'
 import { CONFIDENCE, inr, qtyLabel, WEIGHTS, winnerReason, type Ranked } from '@/lib/rank'
-import { holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
+import { calledIn, holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
 import { VOICE_LANGS, type PublicExecution, type SearchState, type VoiceLang } from '@/lib/types'
-import { Proof, speakText, token, voiceLang } from './ui'
+import { Proof, speakText, token } from './ui'
 
 const OUTCOME: Record<HoldOutcome, [string, string]> = {
   confirmed: ['Reservation confirmed by the shop', 'text-kirana'],
@@ -51,7 +51,7 @@ export default function Results({ data, ranked, holds, finished, sarvam, now }: 
 
       <Ledger data={data} ranked={ranked} holdFor={holdFor} now={now} />
 
-      <Summary searchId={req.id} text={summary} lang={req.language} sarvam={sarvam} />
+      <Summary searchId={req.id} text={summary} lang={req.language} asked={req.asked_in} called={calledIn(data)} sarvam={sarvam} />
     </section>
   )
 }
@@ -255,13 +255,12 @@ function Cost({ data }: { data: SearchState }) {
   )
 }
 
-const noop = () => () => {}
 // The summary in the request's language; with Sarvam it can also be heard in 9 more Indian languages
-// (machine-translated, labelled as such). Defaults to the language the user spoke in, if any.
-function Summary({ searchId, text, lang, sarvam }: { searchId: string; text: string; lang: 'hi' | 'en'; sarvam: boolean }) {
-  const spoken = useSyncExternalStore(noop, voiceLang.get, () => null)
+// (machine-translated, labelled as such). Defaults to the language the user spoke the request in, closing the
+// loop: asked in X → shops called in their own languages → summary in X.
+function Summary({ searchId, text, lang, asked, called, sarvam }: { searchId: string; text: string; lang: 'hi' | 'en'; asked: VoiceLang | null; called: string; sarvam: boolean }) {
   const [picked, setTo] = useState<VoiceLang | null>(null)
-  const to = picked ?? spoken ?? (lang === 'en' ? 'en-IN' : 'hi-IN')
+  const to = picked ?? asked ?? (lang === 'en' ? 'en-IN' : 'hi-IN')
   const [out, setOut] = useState<Awaited<ReturnType<typeof speakText>> | null>(null)
   const [busy, setBusy] = useState(false)
   async function play() {
@@ -271,6 +270,16 @@ function Summary({ searchId, text, lang, sarvam }: { searchId: string; text: str
   }
   return (
     <div className="space-y-3 rounded-2xl border border-line bg-card p-5">
+      <p className="text-sm text-muted">
+        {asked ? (
+          <>
+            Asked in <strong className="text-ink">{VOICE_LANGS[asked]}</strong> → shops called in
+          </>
+        ) : (
+          'Shops called in'
+        )}{' '}
+        <strong className="text-ink">{called}</strong> → summary in <strong className="text-ink">{VOICE_LANGS[sarvam ? to : lang === 'en' ? 'en-IN' : 'hi-IN']}</strong>
+      </p>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <p className="flex-1 text-lg leading-relaxed" lang={lang}>
           {text}

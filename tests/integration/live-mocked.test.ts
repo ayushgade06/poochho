@@ -29,7 +29,8 @@ vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
   return Response.json({ message: 'not mocked' }, { status: 404 })
 })
 
-const { adoptExecution, applyEvent, db, dispatchQueued, getSearch, tick } = await import('@/lib/engine')
+const { adoptExecution, applyEvent, createSearch, db, dispatchQueued, getSearch, tick } = await import('@/lib/engine')
+const { CALL_LANGS } = await import('@/lib/types')
 const SHOPS = ['zz-mock-a', 'zz-mock-b', 'zz-mock-c', 'zz-mock-d']
 let requestId = ''
 
@@ -136,5 +137,32 @@ describe('LIVE safety edges (mocked Bolna)', () => {
     await adoptExecution(unsure, 'mock-late')
     await applyEvent({ providerId: 'mock-late' }, { status: 'completed', duration: 25, extracted_data: { Q: { in_stock: { objective: 'yes', subjective: '' } } } }, 'webhook')
     expect(await row(unsure)).toMatchObject({ status: 'done', provider_execution_id: 'mock-late' })
+  })
+})
+
+describe('call language (mocked Bolna)', () => {
+  const LANG_SHOPS = [
+    { id: 'zz-mock-marathi', language: 'mr' },
+    { id: 'zz-mock-tamil', language: 'ta' }, // the agent has no Tamil yet: Bolna would refuse a call in it
+  ]
+  let searchId = ''
+  afterAll(async () => {
+    if (searchId) await db().from('search_requests').delete().eq('id', searchId)
+    await db().from('shops').delete().in('id', LANG_SHOPS.map((s) => s.id))
+  })
+
+  it("calls each shop in its own language when the agent speaks it, else in the request's, with that language's greeting", async () => {
+    await db().from('call_executions').update({ status: 'done' }).eq('request_id', requestId).in('status', ['dispatching', 'ringing', 'talking']) // free the lines
+    const now = new Date().toISOString()
+    await db().from('shops').upsert(LANG_SHOPS.map((s, i) => ({ ...s, name: `Mock ${s.language} shop`, area: 'Test', source: 'live', phone: `+91000000002${i}`, consent_status: 'verified', consent_verified_at: now, opted_out_at: null })))
+    const before = started.length
+    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: 'ta-IN', shop_ids: LANG_SHOPS.map((s) => s.id) })
+    const calls = started.slice(before).map((c) => ({ to: c.to, lang: (c.body.agent_data as { language: string }).language, greeting: (c.body.user_data as Record<string, string>).greeting }))
+    expect(calls).toHaveLength(2)
+    expect(calls.find((c) => c.to.endsWith('20'))).toEqual({ to: '+910000000020', lang: 'mr', greeting: CALL_LANGS.mr.greeting })
+    expect(calls.find((c) => c.to.endsWith('21'))).toEqual({ to: '+910000000021', lang: 'hi', greeting: CALL_LANGS.hi.greeting })
+    const s = (await getSearch(searchId, true))!
+    expect(s.request.asked_in).toBe('ta-IN')
+    expect(s.executions.map((e) => [e.shop_id, e.language]).sort()).toEqual([['zz-mock-marathi', 'mr'], ['zz-mock-tamil', 'hi']])
   })
 })

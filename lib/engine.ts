@@ -6,7 +6,7 @@ import { quoteHeard } from './extraction'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { DEMO_SHOPS, holdScript, itemLabel, quoteScript } from './sim'
 import { ACTIVE, mergeEvent } from './state'
-import type { CallStatus, Execution, ProviderEvent, PublicExecution, ScriptEvent, SearchRequest, SearchState } from './types'
+import { CALL_LANGS, callLanguage, type CallStatus, type Execution, type ProviderEvent, type PublicExecution, type ScriptEvent, type SearchRequest, type SearchState } from './types'
 import type { NewSearch } from './validate'
 
 let client: SupabaseClient | null = null
@@ -67,24 +67,29 @@ async function assertLiveBudget(n: number) {
 // ---------- searches ----------
 export async function createSearch(input: NewSearch) {
   const { shop_ids, ...fields } = input
+  const shopLang: Record<string, string> = {}
   if (input.mode === 'simulated') {
     const picked = DEMO_SHOPS.filter((s) => shop_ids.includes(s.id))
     if (picked.length !== shop_ids.length) throw new UserError('Unknown demo shop.')
     must(await db().from('shops').upsert(picked.map((s) => ({ id: s.id, name: s.name, area: s.area, language: s.language, source: 'demo' }))))
+    for (const s of picked) shopLang[s.id] = s.language
   } else {
     const rows = must<ShopRow[]>(await db().from('shops').select(SHOP_COLS).in('id', shop_ids))
     const bad = shop_ids.filter((id) => !callable(rows.find((r) => r.id === id) ?? null))
     if (bad.length) throw new UserError(`Not eligible for calls (consent or opt-out): ${bad.join(', ')}`)
     await assertLiveBudget(shop_ids.length)
+    for (const s of rows) shopLang[s.id] = s.language
   }
   const request = must<SearchRequest>(await db().from('search_requests').insert(fields).select('*').single())
   const now = new Date().toISOString()
   const rows = shop_ids.map((shopId) => {
-    const base = { request_id: request.id, shop_id: shopId, kind: 'quote', mode: input.mode }
+    // Decided once, here, and stored: each shop is called in its own language when the agent speaks it.
+    const language = callLanguage(shopLang[shopId], request.language)
+    const base = { request_id: request.id, shop_id: shopId, kind: 'quote', mode: input.mode, language }
     if (input.mode === 'live') return { ...base, status: 'queued' }
     const pid = `sim-${crypto.randomUUID()}`
     const shop = DEMO_SHOPS.find((s) => s.id === shopId)!
-    return { ...base, status: 'dispatching', provider_execution_id: pid, dispatched_at: now, script: quoteScript(shop, request, pid) }
+    return { ...base, status: 'dispatching', provider_execution_id: pid, dispatched_at: now, script: quoteScript(shop, request, language, pid) }
   })
   must(await db().from('call_executions').insert(rows))
   // The calls are saved: a dispatch hiccup must not fail the request (a retry would queue them twice).
@@ -101,7 +106,7 @@ type Replay = {
   source: 'live' | 'simulated'
   recorded_at: string
   request: Omit<SearchRequest, 'id' | 'mode' | 'replay_of' | 'created_at'>
-  calls: { shop: { name: string; area: string; language: string }; kind: 'quote' | 'hold'; events: ScriptEvent[] }[]
+  calls: { shop: { name: string; area: string; language: string }; kind: 'quote' | 'hold'; language?: string | null; events: ScriptEvent[] }[]
 }
 export const REPLAYS = replays as unknown as Replay[]
 const replayShopId = (name: string) => `replay-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)}`
@@ -116,13 +121,13 @@ export async function createReplay(replayId: string) {
   const now = new Date().toISOString()
   must(
     await db().from('call_executions').insert(
-      quotes.map((c) => ({ request_id: request.id, shop_id: replayShopId(c.shop.name), kind: 'quote', mode: 'replay', status: 'dispatching', provider_execution_id: `replay-${crypto.randomUUID()}`, dispatched_at: now, script: c.events })),
+      quotes.map((c) => ({ request_id: request.id, shop_id: replayShopId(c.shop.name), kind: 'quote', mode: 'replay', language: c.language ?? callLanguage(c.shop.language, r.request.language), status: 'dispatching', provider_execution_id: `replay-${crypto.randomUUID()}`, dispatched_at: now, script: c.events })),
     ),
   )
   return request.id
 }
 
-const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, cost_cents, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
+const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, language, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, cost_cents, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
 
 // Real calls with real shopkeepers: without the operator token, transcripts, the shopkeeper's quoted words,
 // free-text notes, raw provider errors and Bolna's call id (it unlocks the recording) are withheld. Simulated
@@ -152,19 +157,20 @@ export async function recordingId(executionId: string) {
 
 // ---------- reservation ("Hold it") ----------
 export async function createHold(executionId: string, liveAllowed: boolean) {
-  const src = must<Row>(await db().from('call_executions').select('id, request_id, shop_id, kind, mode, status, extracted, search_requests(*)').eq('id', executionId).maybeSingle())
+  const src = must<Row>(await db().from('call_executions').select('id, request_id, shop_id, kind, mode, language, status, extracted, search_requests(*)').eq('id', executionId).maybeSingle())
   if (!src) throw new UserError('Unknown call.')
   if (src.mode === 'live' && !liveAllowed) throw new UserError('A live hold call needs LIVE mode enabled and the operator token.')
   if (src.kind !== 'quote' || src.status !== 'done' || !['yes', 'partial'].includes(src.extracted?.in_stock)) throw new UserError('Only a shop that confirmed stock can be asked to hold it.')
   const req = src.search_requests as SearchRequest
-  const base = { request_id: src.request_id, shop_id: src.shop_id, kind: 'hold', mode: src.mode }
+  const language = src.language ?? req.language // the hold call speaks the language the quote call did
+  const base = { request_id: src.request_id, shop_id: src.shop_id, kind: 'hold', mode: src.mode, language }
   let row: Record<string, unknown> = { ...base, status: 'queued' }
   if (src.mode === 'live') await assertLiveBudget(1)
   else {
     const pid = `${src.mode === 'replay' ? 'replay' : 'sim'}-${crypto.randomUUID()}`
     const shop = DEMO_SHOPS.find((s) => s.id === src.shop_id)
     const script =
-      src.mode === 'simulated' ? shop && holdScript(shop, req, pid)
+      src.mode === 'simulated' ? shop && holdScript(shop, req, language, pid)
       : REPLAYS.find((r) => r.id === req.replay_of)?.calls.find((c) => c.kind === 'hold' && replayShopId(c.shop.name) === src.shop_id)?.events
     if (!script) throw new UserError('No recorded or scripted hold call exists for this shop.')
     row = { ...base, status: 'dispatching', provider_execution_id: pid, dispatched_at: new Date().toISOString(), script }
@@ -187,7 +193,7 @@ export async function dispatchQueued() {
   if (!inCallingWindow()) return failQueued(`not placed: outside the calling window (${cfg.callWindow} IST)`)
   const claimed = must<Row[]>(await db().rpc('claim_live_calls', { max_active: cfg.maxConcurrency }))
   if (!claimed.length) return
-  const details = must<Row[]>(await db().from('call_executions').select(`id, kind, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).in('id', claimed.map((c) => c.id)))
+  const details = must<Row[]>(await db().from('call_executions').select(`id, kind, language, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).in('id', claimed.map((c) => c.id)))
   for (const q of details) await dial(q).catch((e) => console.error('dial failed for', q.id, (e as Error).message))
 }
 
@@ -201,7 +207,9 @@ async function dial(q: Row) {
   const shop = q.shops as ShopRow
   const req = q.search_requests as SearchRequest
   if (!callable(shop)) return applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: shop is no longer eligible (consent or opt-out)' }, 'dispatch')
+  const language = q.language && Object.hasOwn(CALL_LANGS, q.language) ? (q.language as string) : req.language
   const vars = {
+    greeting: CALL_LANGS[language].greeting, // the agent's welcome message is {greeting}: AI disclosure and recording notice
     shop_name: shop.name,
     item: itemLabel(req),
     quantity: `${req.quantity} ${req.unit}`,
@@ -211,7 +219,7 @@ async function dial(q: Row) {
   }
   let pid: string
   try {
-    pid = await startCall(shop.phone!, vars, req.language, q.kind === 'hold' && process.env.BOLNA_HOLD_AGENT_ID ? process.env.BOLNA_HOLD_AGENT_ID : undefined)
+    pid = await startCall(shop.phone!, vars, language) // hold calls too: the prompt's Section 4A handles {call_purpose} = hold
   } catch (e) {
     // Bolna refused (HTTP error): no call was placed. A timeout or network error is ambiguous, because the
     // call may have gone through, so it stays open (timeout) for a late webhook instead of being called failed.
@@ -263,12 +271,12 @@ export async function metricsRows(mode: string): Promise<MetricRow[]> {
   const rows = must<Row[]>(
     await db()
       .from('call_executions')
-      .select('id, request_id, mode, kind, status, provider_status, error, dispatched_at, answered_at, ended_at, first_quote_at, duration_seconds, cost_cents, extracted, shops(name), search_requests(language, product, quantity), result_labels(field, is_correct)')
+      .select('id, request_id, mode, kind, language, status, provider_status, error, dispatched_at, answered_at, ended_at, first_quote_at, duration_seconds, cost_cents, extracted, shops(name), search_requests(language, product, quantity), result_labels(field, is_correct)')
       .eq('mode', mode)
       .order('created_at', { ascending: false })
       .limit(2000),
   )
-  return rows.map(({ shops, search_requests, result_labels, ...r }) => ({ ...r, shop: shops?.name ?? '', language: search_requests?.language ?? '', product: search_requests?.product ?? '', quantity: Number(search_requests?.quantity ?? 0), labels: result_labels ?? [] }))
+  return rows.map(({ shops, search_requests, result_labels, ...r }) => ({ ...r, shop: shops?.name ?? '', language: r.language ?? search_requests?.language ?? '', product: search_requests?.product ?? '', quantity: Number(search_requests?.quantity ?? 0), labels: result_labels ?? [] }))
 }
 
 export async function labelQueue(mode: string) {

@@ -2,7 +2,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { ago } from '@/lib/summary'
-import { VOICE_LANGS, type CallStatus, type Mode, type PublicExecution, type VoiceLang } from '@/lib/types'
+import type { CallStatus, Mode, PublicExecution, VoiceLang } from '@/lib/types'
 
 // ---------- mode banners: SIMULATED, REPLAY and LIVE never look alike ----------
 export function ModeBanner({ mode, replaySource, recordedAt }: { mode: Mode; replaySource?: 'live' | 'simulated'; recordedAt?: string }) {
@@ -110,23 +110,6 @@ export const token = {
   set: (v: string) => {
     try {
       sessionStorage.setItem('poochho-operator', v)
-    } catch {}
-  },
-}
-
-// The language the user last spoke in (Sarvam-detected); the results page offers the summary in it.
-export const voiceLang = {
-  get: (): VoiceLang | null => {
-    try {
-      const v = sessionStorage.getItem('poochho-voice-lang')
-      return v && v in VOICE_LANGS ? (v as VoiceLang) : null
-    } catch {
-      return null
-    }
-  },
-  set: (v: VoiceLang) => {
-    try {
-      sessionStorage.setItem('poochho-voice-lang', v)
     } catch {}
   },
 }

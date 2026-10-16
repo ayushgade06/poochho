@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { qtyLabel, rankResults } from '@/lib/rank'
-import { LANGS, type SearchState } from '@/lib/types'
+import { calledIn } from '@/lib/summary'
+import { VOICE_LANGS, type SearchState } from '@/lib/types'
 import CallCard from './CallCard'
 import Results from './Results'
 import { browserSupabase, ModeBanner, token } from './ui'
@@ -123,7 +124,8 @@ export default function SearchView({ id }: { id: string }) {
             {req.brand_or_variant && <span className="text-muted"> ({req.brand_or_variant})</span>}
           </h1>
           <p className="mt-1 text-lg text-muted">
-            Near {req.area}, {req.city} · calls in {LANGS[req.language]}
+            Near {req.area}, {req.city}
+            {req.asked_in && ` · asked in ${VOICE_LANGS[req.asked_in]}`} · called in {calledIn(data)}
             {req.need_within_minutes ? ` · needed within ${req.need_within_minutes} min` : ''}
             {req.max_budget_inr ? ` · budget ₹${req.max_budget_inr}` : ''}
           </p>

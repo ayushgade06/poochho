@@ -17,7 +17,7 @@ const must = ({ data, error }) => {
 }
 const req = must(await db.from('search_requests').select('*').eq('id', id).single())
 if (req.mode === 'replay') throw new Error('That search is itself a replay.')
-const calls = must(await db.from('call_executions').select('id, kind, status, dispatched_at, shops(name, area, language)').eq('request_id', id).order('created_at'))
+const calls = must(await db.from('call_executions').select('id, kind, language, status, dispatched_at, shops(name, area, language)').eq('request_id', id).order('created_at'))
 // Masks long digit runs (phone numbers) in every string, at any depth. For real calls, free-text notes are
 // dropped entirely: they can hold anything the shopkeeper said.
 const mask = (v) =>
@@ -34,6 +34,7 @@ for (const c of calls) {
   out.push({
     shop: c.shops,
     kind: c.kind,
+    language: c.language, // the language the call was placed in
     events: events
       .filter((e) => e.payload && typeof e.payload === 'object' && e.payload.status)
       .map((e) => ({

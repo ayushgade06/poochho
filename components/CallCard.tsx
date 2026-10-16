@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { inr } from '@/lib/rank'
-import type { PublicExecution } from '@/lib/types'
+import { CALL_LANGS, type PublicExecution } from '@/lib/types'
 import { Lamp, Proof, reason, STATUS, token } from './ui'
 
 const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
@@ -29,6 +29,7 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
           <p className="text-sm text-muted">
             {e.shop.area}
             {e.kind === 'hold' ? ' · Reservation call' : e.shop.source === 'demo' ? ' · Simulated shop' : e.shop.source === 'replay' ? ' · Replayed' : ''}
+            {e.language && CALL_LANGS[e.language] && ` · called in ${CALL_LANGS[e.language].name}`}
           </p>
         </div>
         <span className="tabular rounded-md bg-ink/5 px-2 py-1 font-mono text-sm text-muted" aria-label="Elapsed time">

@@ -1,4 +1,4 @@
-import { CATEGORIES, LANGS, UNITS, type Lang, type Mode } from './types'
+import { CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type Mode, type VoiceLang } from './types'
 
 export type NewSearch = {
   mode: Exclude<Mode, 'replay'>
@@ -13,6 +13,7 @@ export type NewSearch = {
   max_budget_inr: number | null
   need_within_minutes: number | null
   constraints: string | null
+  asked_in: VoiceLang | null
   shop_ids: string[]
 }
 
@@ -78,6 +79,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     max_budget_inr: num('max_budget_inr', 1, 10_000_000),
     need_within_minutes: num('need_within_minutes', 5, 1440, false, true),
     constraints: text('constraints', 300),
+    asked_in: oneOf('asked_in', Object.keys(VOICE_LANGS) as VoiceLang[]),
     shop_ids: shopIds as string[],
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value }

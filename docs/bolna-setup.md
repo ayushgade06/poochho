@@ -94,7 +94,9 @@ a search page is open, so LIVE mode still works locally without a tunnel. Webhoo
 
 | Where | Setting | Value | Why |
 |---|---|---|---|
-| Agent tab | Welcome message | `data/bolna-welcome.txt`: Devanagari, feminine, says it is an AI and that the call is recorded | The first live call read "bol raha/rahi hoon" literally, and Roman-letter Hindi set the style for the whole call. The recording notice ("यह call record हो रही है") is what India's DPDP rules expect. It is one agent-level field, not one per language tab |
+| Agent tab | Welcome message | `{greeting}` (`data/bolna-welcome.txt`). Poochho sends each call's greeting in that call's language from `data/call-languages.json`: Devanagari, feminine, says it is an AI and that the call is recorded | The first live call read "bol raha/rahi hoon" literally, and Roman-letter Hindi set the style for the whole call. The recording notice ("यह call record हो रही है") is what India's DPDP rules expect. Bolna keeps one welcome text for all languages (its docs suggest a variable for localized greetings), so a fixed Hindi text would also open English and Marathi calls |
+| Agent tab → Canvas | Languages | Hindi (default), English, **Marathi** | Each must also be in `data/call-languages.json`; Bolna refuses (400) a call in a language the agent doesn't have |
+| Languages tab → Marathi | Voice / transcription | Sarvam `bulbul:v4-flash`, "Ishita (Conversational)" / Sarvam `saaras:v4`, with a shop-call context and keywords (stock, packet, price…) | Added 2026-10-16. Hindi and English still use ElevenLabs and Deepgram |
 | Agent tab | Prompt, **Hindi and English tabs** | `data/bolna-prompt.md` (see §5) | Calls use the per-language prompt. The English one was empty, so a call that switched to English improvised |
 | Languages tab | Move to English when | the caller requested for it | Shopkeepers mix in English words ("already", model numbers); auto-detection flipped the call to the English setup |
 | Languages tab → Voice → Advanced | Hindi voice speed rate | `0.9` | Product names and prices are easier to follow on a phone line |
@@ -128,7 +130,13 @@ Bolna agent's welcome message and prompt"). Changes made after the first live ca
 - Short closings without a recap and without "Namaste"; no promised callbacks.
 
 **To change it:** edit `data/bolna-prompt.md`, paste it into **both** the Hindi and English tabs of the prompt editor
-(Agent tab), save, and run `npm run bolna -- check`. Don't set it through the API: on a multilingual agent the API's
+(Agent tab), and `data/bolna-prompt-mr.md` into the Marathi tab; save, and run `npm run bolna -- check`. Pasting works
+from the clipboard: click in the editor, Ctrl+A, Ctrl+V.
+
+The Marathi prompt (`data/bolna-prompt-mr.md`) is the Hindi one with every spoken line and keyword list translated
+into Marathi (feminine forms, Devanagari, shop English kept as is); the instructions stay in English. It was written
+by the developer and **needs a native speaker's review**. Both prompts have an FAQ for "why is this call recorded?"
+(added 2026-10-16): the agent explains, and ends the call politely if the shopkeeper objects. Don't set it through the API: on a multilingual agent the API's
 `agent_prompts` is not what calls use, and every dashboard save rewrites it. Have a native speaker review the Hindi.
 
 ## 6. Trial-account limits
