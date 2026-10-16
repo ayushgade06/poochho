@@ -11,6 +11,11 @@ export const cfg = {
   maxLivePerDay: int(process.env.MAX_LIVE_CALLS_PER_DAY, 25, 1, 500),
   watchdogSec: int(process.env.CALL_WATCHDOG_SECONDS, 300, 120, 3600), // never shorter than a 90 s call
   callWindow: /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/.test(process.env.CALL_WINDOW_IST ?? '') ? process.env.CALL_WINDOW_IST! : '09:00-20:00',
+  // Public features that cost money: daily caps per visitor and overall (days in India time). Operators are not capped.
+  judgePerIp: int(process.env.JUDGE_CALLS_PER_IP_PER_DAY, 3, 1, 100),
+  judgePerDay: int(process.env.JUDGE_CALLS_PER_DAY, 30, 1, 1000),
+  voicePerIp: int(process.env.VOICE_INPUTS_PER_IP_PER_DAY, 20, 1, 1000),
+  voicePerDay: int(process.env.VOICE_INPUTS_PER_DAY, 300, 1, 10000),
 }
 
 // "HH:MM-HH:MM" in IST (UTC+5:30, no DST). Default 09:00–20:00, inside TRAI's 9 AM–9 PM guidance.
@@ -37,10 +42,15 @@ export function bolnaDenied(req: Request) {
   const given = req.headers.get('x-poochho-secret')
   if (!secret || !given || !safeEqual(given, secret)) return Response.json({ error: 'unauthorized' }, { status: 401 })
   const allow = (process.env.BOLNA_WEBHOOK_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
-  if (allow.length && !allow.includes(ip)) return Response.json({ error: 'forbidden' }, { status: 403 })
+  if (allow.length && !allow.includes(clientIp(req))) return Response.json({ error: 'forbidden' }, { status: 403 })
   return null
 }
+
+// The caller's IP: the first x-forwarded-for hop (set by Vercel), else x-real-ip.
+export const clientIp = (req: Request) => (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
+
+// Judge mode places a browser call through Bolna's Web Call SDK: off unless enabled and Bolna is configured.
+export const webCallEnabled = () => process.env.WEB_CALL_ENABLED === 'true' && Boolean(process.env.BOLNA_API_KEY && process.env.BOLNA_AGENT_ID)
 
 // Privileged routes (live calls, labels, exports) need the operator token. No token configured = locked.
 export function isAdmin(req: Request) {

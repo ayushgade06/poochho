@@ -10,7 +10,8 @@
 - Buildathon milestones (§9): **M1 done** (availability first; the shopkeeper's own words, freshness, recordings and
   cost behind every answer). **M3 done** apart from a real Marathi call (each shop called in its own language; the
   agent now speaks Marathi). **M4 done locally** (answers mid-call, stop once found); the Bolna tool gets connected
-after deployment. **M2 waits for the Kaggle dataset.**
+after deployment. **M5 built** (judge mode; voice input for everyone within caps): its migration and the first
+browser call wait for you (see §9). **M2 waits for the Kaggle dataset.**
 
 ## 1. Features implemented
 
@@ -271,3 +272,32 @@ to end.
 **Waits for deployment:** adding the custom function in Agent → Tools and the two prompt lines that tell the agent
 to call it (exact JSON and text in `docs/bolna-setup.md` §6). Until then LIVE calls still stop once found, using
 the final answers.
+
+### M5: judge mode, where the judge plays the shopkeeper in their browser (2026-10-17, built; migration and first call pending)
+
+**The Web Call SDK is already enabled on this account**: `POST https://api.bolna.ai/web-call/session` returned a session
+(`run_id`, SIP credentials, `expires_in: 120`), with `agent_data.language` accepted. No message to Bolna is needed.
+Minting a session creates an "in-progress" web-call execution on Bolna's side (its `run_id` is the execution id, so
+webhooks and polling work as for a phone call); unused sessions took no concurrency slot and no money (concurrency
+0/2, wallet unchanged at 485).
+
+| Change | Where | How it was verified |
+|---|---|---|
+| A `judge` mode (`MODES`, DB constraints): a search with up to 2 simulated shops plus "Your shop", whose call waits until the judge clicks **Answer the call**. That click mints a single-use session with the same variables and language a phone call gets, claimed once (a second click is refused). The call is then polled, webhooked, extracted and ranked like a phone call. Its own banner (plum): "JUDGE MODE — you play Your shop in this browser… No phones ring." Transcripts are visible through the search's URL, like simulated runs; no recordings. Behind `WEB_CALL_ENABLED` | `lib/engine.ts` (`startWebCall`), `lib/bolna.ts` (`createWebSession`), `app/api/executions/[id]/web-call`, `components/CallCard.tsx` (`JudgeCall`, `@bolna/web-call` loaded only on click), `components/SearchForm.tsx`, `components/ui.tsx` | Route unit tests (flag, caps, operator bypass, no-store); integration test with mocked Bolna written (session minted only on request, once, with the right variables; the judge's answers win the ranking) |
+| Daily caps per visitor (HMAC of the IP, never the IP) and overall, counted atomically in `usage_counters` by `bump_usage()`; a hard two-minute limit on the browser call on top of the agent's 90 s timeout; an explicit start click | migration `20261017010000_judge_mode.sql`, `lib/engine.ts` (`withinDailyCap`), `lib/config.ts` | Integration test of the counter written |
+| Sarvam voice input open to everyone within the same kind of caps (it was operator-only), so judges can speak in any Indian language on the public link; the button shows the server's reason when the caps are used up | `app/api/stt/route.ts`, `components/SearchForm.tsx` | Route unit tests (allowed, capped, operator never capped) |
+| Fallback, if the browser call can't be used: add the judge's phone as a consenting test shop (verified in Bolna first on a trial) | `DEMO.md` | — |
+
+**Status.** The migration `20261017010000_judge_mode.sql` was applied in the SQL editor (pasted from the file) and
+checked from the server: the counter stops at its limit (`[true, true, null]`), the `judge` mode and shop source are
+accepted, and the publishable key gets `42501` on `usage_counters` and `bump_usage`. 90 unit and 21 integration tests
+pass. A code review found 6 issues, all fixed: the visitor's own counter is checked first so one visitor can't use
+up everyone's day; a judge call is claimed before the cap is spent (only a real start counts, and the claim is given
+back if the cap is used up); the microphone is asked for before a session is minted; an unanswered judge call
+expires after 15 minutes; voice input falls back to the browser's own recognition once Sarvam is capped; judge mode
+needs at least one simulated shop.
+
+**Not yet verified:** `npm run build` and the browser check of the judge screens. The machine ran out of commit
+memory on 2026-10-17 at about 01:00 (1.3 GB headroom of 47 GB; other projects' dev servers were using most of it):
+the build compiles, then its type-check workers can't allocate memory. `npm run typecheck` passes on its own.
+**The first judge-mode browser call waits for your OK** (it needs a microphone, so it's yours to make).

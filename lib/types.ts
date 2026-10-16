@@ -1,6 +1,7 @@
 import callLangs from '@/data/call-languages.json'
 
-export const MODES = ['simulated', 'live', 'replay'] as const
+// judge: the judge plays one shop in their own browser (Bolna Web Call SDK); the other shops are simulated.
+export const MODES = ['simulated', 'live', 'replay', 'judge'] as const
 export type Mode = (typeof MODES)[number]
 
 // The request's language: the summary's language, and the call language for shops whose own language the agent

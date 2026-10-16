@@ -77,7 +77,7 @@ function WinnerCard({ data, r, hold, why, now }: { data: SearchState; r: Ranked;
       {why && <p className="mt-2 text-muted">Why: {why}</p>}
       {outcome && <p className={`mt-3 text-lg font-semibold ${OUTCOME[outcome][1]}`}>{OUTCOME[outcome][0]}</p>}
       <div className="mt-6 flex flex-wrap gap-3">
-        {!hold && <HoldButton key={r.id} data={data} executionId={r.id} shopName={r.shopName} />}
+        {!hold && e.mode !== 'judge' && <HoldButton key={r.id} data={data} executionId={r.id} shopName={r.shopName} />}
         <a
           className="inline-flex items-center gap-2 rounded-xl bg-[#1f7a43] px-5 py-3 font-semibold text-white"
           href={`https://wa.me/?text=${encodeURIComponent(shareText(req, r, reserved, e.ended_at))}`}
@@ -181,7 +181,7 @@ function Ledger({ data, ranked, holdFor, now }: { data: SearchState; ranked: Ran
                   <span className="font-display text-xl">{answered ? r.score : '–'}</span>
                   {answered && x && <Bars f={r.factors} />}
                 </td>
-                <td className="py-3 pl-3 pr-5">{r.stock !== 'none' && answered && x && (x.in_stock === 'yes' || x.in_stock === 'partial') && !h && !r.winner && <HoldButton data={data} executionId={r.id} shopName={r.shopName} />}</td>
+                <td className="py-3 pl-3 pr-5">{r.stock !== 'none' && answered && x && (x.in_stock === 'yes' || x.in_stock === 'partial') && !h && !r.winner && e.mode !== 'judge' && <HoldButton data={data} executionId={r.id} shopName={r.shopName} />}</td>
               </tr>
             )
           })}

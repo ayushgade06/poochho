@@ -1,4 +1,4 @@
-import { cfg, isAdmin, liveBlockers } from '@/lib/config'
+import { cfg, isAdmin, liveBlockers, webCallEnabled } from '@/lib/config'
 import { createReplay, createSearch, errorResponse } from '@/lib/engine'
 import { validateSearch } from '@/lib/validate'
 
@@ -12,6 +12,7 @@ export async function POST(req: Request) {
     }
     const v = validateSearch(body, cfg.maxCalls)
     if (!v.ok) return Response.json({ error: 'Please fix the highlighted fields.', errors: v.errors }, { status: 422 })
+    if (v.value.mode === 'judge' && !webCallEnabled()) return Response.json({ error: 'Judge mode is not enabled.' }, { status: 403 })
     if (v.value.mode === 'live') {
       // LIVE needs all of: server opt-in, the operator token, and the user's explicit confirmation of the
       // exact shops they reviewed (shop_ids). Anything missing means no call is placed.

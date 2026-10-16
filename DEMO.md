@@ -27,7 +27,18 @@ banner says so honestly.
 | 1:05–1:20 | Best-match card, **Hold it**, **Yes** | "One tap places a second, separate call asking Sharma Kirana to keep it aside. It only says *reserved* if the shop actually agrees on that call." Wait for **Reservation confirmed by the shop**. |
 | 1:20–1:30 | Point at the line above the summary (**Asked in தமிழ் → shops called in हिन्दी, मराठी → summary in தமிழ்**), the **time-saved** strip and the cost line, pick **मराठी** (or the judge's language), **Hear the summary**, point at WhatsApp | "Patil Provision speaks Marathi, so Poochho called it in Marathi. Measured from this run: all calls together took X, one by one would take Y, and the whole search cost ₹Z in call charges. And the answer comes back in your language: eleven Indian languages through Sarvam. **You ask once. Poochho asks everyone.**" (A simulated run says it used no credits; quote ₹Z only from a real run or its replay.) |
 
-**For the interview (operator token in the tab):** on a real call's card, **Play the call recording** lets judges
+**For the interview: judge mode.** Choose **Judge**, type the request, start, and let the judge tap **Answer the
+call** on the "Your shop" card and play the shopkeeper in their own browser (microphone needed). Their answers are
+extracted and ranked against two simulated shops while they watch. Rehearse once: allow the microphone, use
+headphones, and expect the agent's greeting about a second after connecting.
+
+**If judge mode can't be used** (no microphone, a blocked network): add the judge's phone as a consenting test shop
+before the interview. On a Bolna trial the number must first be verified in the Bolna dashboard (User Profile →
+Verified Numbers). Then put it in `data/shops.local.json` with a `consent_note` ("agreed on the interview call,
+<date>") and `consent_verified_at`, run `npm run seed:shops`, and place one LIVE call to it during the call window.
+Remove it afterwards.
+
+**Also for the interview (operator token in the tab):** on a real call's card, **Play the call recording** lets judges
 hear the actual shopkeeper. The agent's first sentence says it is an AI and that the call is recorded.
 
 **Optional opener (Sarvam, needs the operator token in the tab):** tap **Speak in any Indian language** and say one

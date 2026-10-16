@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { inr } from '@/lib/rank'
 import { notNeeded } from '@/lib/state'
 import { CALL_LANGS, type LiveAnswer, type PublicExecution } from '@/lib/types'
@@ -46,6 +46,7 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
         {s.label}
         {(e.status === 'failed' || e.status === 'timeout') && reason(e.error) && <span className="font-normal text-muted"> · {reason(e.error)}</span>}
       </p>
+      {e.mode === 'judge' && !['done', 'failed', 'timeout'].includes(e.status) && <JudgeCall key={e.id} id={e.id} waiting={e.status === 'queued'} />}
       {e.kind === 'quote' && <Proof e={e} now={now} className="mt-1" />}
       {e.live_answer && !(x && e.status === 'done') && <Live a={e.live_answer} quantity={quantity} />}
 
@@ -70,6 +71,67 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
       {lines.length > 0 && <Transcript lines={lines} />}
       {e.answered_at && e.ended_at && (e.mode === 'live' ? operator && <Recording id={e.id} /> : <p className="mt-3 text-xs text-muted">{e.mode === 'simulated' ? 'Simulated call — no audio' : 'Replayed call — no audio'}</p>)}
     </article>
+  )
+}
+
+// Judge mode: the judge answers the agent in this browser through Bolna's Web Call SDK (loaded only on click). The
+// session comes from our server; the answers then flow through the same webhooks, extraction and ranking as a phone
+// call. Two minutes at most, on top of the agent's own call timeout.
+const JUDGE_MAX_MS = 120_000
+function JudgeCall({ id, waiting }: { id: string; waiting: boolean }) {
+  const [state, setState] = useState<'idle' | 'connecting' | 'ringing' | 'active' | 'ended'>('idle')
+  const [err, setErr] = useState<string | null>(null)
+  const call = useRef<{ stop: () => Promise<void> } | null>(null)
+  useEffect(() => () => void call.current?.stop(), [])
+  async function answer() {
+    setErr(null)
+    setState('connecting')
+    try {
+      // The microphone first: the SDK mints the session (one Bolna call, one cap slot) before asking for it.
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: true }).catch(() => null)
+      if (!mic) throw new Error('Allow the microphone to play the shopkeeper.')
+      mic.getTracks().forEach((t) => t.stop())
+      const { BolnaWebCall } = await import('@bolna/web-call')
+      const c = new BolnaWebCall({
+        getSession: async () => {
+          const r = await fetch(`/api/executions/${id}/web-call`, { method: 'POST' })
+          const d = await r.json().catch(() => ({}))
+          if (!r.ok) throw new Error(d.error ?? 'Could not start the call.')
+          return d
+        },
+      })
+      call.current = c
+      c.on('state-change', setState)
+      c.on('error', (x) => setErr(x.code === 'microphone_denied' ? 'Allow the microphone to play the shopkeeper.' : x.message))
+      setTimeout(() => void c.stop(), JUDGE_MAX_MS)
+      await c.start()
+    } catch (x) {
+      setErr((x as Error).message)
+      setState('idle')
+    }
+  }
+  const on = state === 'connecting' || state === 'ringing' || state === 'active'
+  return (
+    <div className="mt-3 space-y-2">
+      {waiting && !on && state !== 'ended' && (
+        <button className="rounded-xl bg-plum px-4 py-2.5 font-semibold text-white" onClick={answer}>
+          📞 Answer the call
+        </button>
+      )}
+      {on && (
+        <p className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="font-semibold text-plum">{state === 'active' ? 'You are on the call: answer as the shopkeeper' : 'Connecting…'}</span>
+          <button className="rounded-lg border border-line bg-white px-3 py-1 font-semibold" onClick={() => void call.current?.stop()}>
+            Hang up
+          </button>
+        </p>
+      )}
+      {err && (
+        <p className="text-sm text-chili" role="alert">
+          {err}
+        </p>
+      )}
+    </div>
   )
 }
 

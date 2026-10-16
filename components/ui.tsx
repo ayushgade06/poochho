@@ -14,6 +14,14 @@ export function ModeBanner({ mode, replaySource, recordedAt }: { mode: Mode; rep
         <span className="text-ink">Real phone calls to consenting test shops.</span>
       </div>
     )
+  if (mode === 'judge')
+    return (
+      <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-plum bg-plum/10 px-4 py-3 text-plum">
+        <span aria-hidden>🎙</span>
+        <strong className="tracking-wide">JUDGE MODE</strong>
+        <span className="text-ink">You play “Your shop” in this browser, with your microphone. The other shops are simulated. No phones ring.</span>
+      </div>
+    )
   if (mode === 'replay')
     return (
       <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border-2 border-indigo bg-indigo-soft px-4 py-3 text-indigo">

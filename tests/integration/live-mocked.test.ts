@@ -12,6 +12,7 @@ process.env.BOLNA_WEBHOOK_SECRET = 'test-webhook-secret'
 
 const realFetch = globalThis.fetch
 const started: { to: string; body: Record<string, unknown> }[] = []
+const sessions: Record<string, unknown>[] = [] // web-call sessions minted (judge mode)
 const polled: Record<string, unknown> = {}
 let callMode: 'ok' | 'refuse' | 'hang' = 'ok' // how the mocked POST /call behaves
 vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -24,12 +25,17 @@ vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     started.push({ to: body.recipient_phone_number, body })
     return Response.json({ message: 'done', status: 'queued', execution_id: `mock-${started.length}` })
   }
+  if (url.endsWith('/web-call/session') && init?.method === 'POST') {
+    sessions.push(JSON.parse(String(init.body)))
+    return Response.json({ run_id: `web-${sessions.length}`, agent_id: 'mock-agent', sip_username: 'u', sip_password: 'p', sip_domain: 'd', wss_url: 'wss://x', sip_register: false, expires_in: 120, ice_servers: [] })
+  }
   const m = /\/executions\/([^/]+)$/.exec(url)
   if (m) return Response.json(polled[m[1]] ?? { id: m[1], status: 'ringing' })
   return Response.json({ message: 'not mocked' }, { status: 404 })
 })
 
-const { adoptExecution, applyEvent, createSearch, db, dispatchQueued, getSearch, tick } = await import('@/lib/engine')
+const { adoptExecution, applyEvent, CapReached, createSearch, db, dispatchQueued, getSearch, startWebCall, tick, UserError } = await import('@/lib/engine')
+const { rankResults } = await import('@/lib/rank')
 const { CALL_LANGS } = await import('@/lib/types')
 const SHOPS = ['zz-mock-a', 'zz-mock-b', 'zz-mock-c', 'zz-mock-d']
 let requestId = ''
@@ -198,3 +204,47 @@ describe('stop calling once found (mocked Bolna)', () => {
     expect(logged.data).toEqual([{ source: 'tool', payload: { status: '__live', live: { in_stock: 'yes', can_hold: 'yes' } } }])
   })
 })
+
+describe('judge mode (mocked Bolna web calls)', () => {
+  let searchId = ''
+  afterAll(async () => {
+    if (searchId) await db().from('search_requests').delete().eq('id', searchId)
+  })
+
+  it("runs the judge's browser call through the same pipeline as a phone call, started once, only on request", async () => {
+    searchId = await createSearch({ mode: 'judge', product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'en', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, shop_ids: ['demo-gupta-general', 'demo-patil-provision'] })
+    let s = (await getSearch(searchId))!
+    expect(s.request.mode).toBe('judge')
+    expect(s.redacted).toBe(false) // like a simulated run: visible through the search's unguessable URL
+    const judge = s.executions.find((e) => e.mode === 'judge')!
+    expect(judge).toMatchObject({ status: 'queued', language: 'en', shop: { name: 'Your shop', source: 'judge' } })
+    expect(s.executions.filter((e) => e.mode === 'simulated').map((e) => e.status)).toEqual(['dispatching', 'dispatching'])
+    expect(sessions).toHaveLength(0) // nothing is minted until the judge clicks
+
+    await expect(startWebCall(judge.id, async () => false)).rejects.toBeInstanceOf(CapReached) // caps used up: nothing minted
+    expect(sessions).toHaveLength(0)
+    expect((await getSearch(searchId))!.executions.find((e) => e.id === judge.id)!.status).toBe('queued') // the claim is given back
+    const session = await startWebCall(judge.id, async () => true)
+    expect(session.run_id).toBe('web-1')
+    expect(sessions[0]).toMatchObject({ agent_id: 'mock-agent', agent_data: { language: 'en' }, user_data: { shop_name: 'Your shop', item: 'Amul Butter, 500g', quantity: '2 packet', call_purpose: 'quote', poochho_execution_id: judge.id } })
+    expect((sessions[0].user_data as Record<string, string>).greeting).toMatch(/AI assistant.*recorded/)
+    await expect(startWebCall(judge.id, async () => true)).rejects.toBeInstanceOf(UserError) // one session per call
+    expect(sessions).toHaveLength(1)
+
+    // Bolna reports the browser call like any other: by its run_id.
+    await applyEvent({ providerId: 'web-1' }, { status: 'completed', duration: 40, transcript: 'assistant: hi\nuser: yes we have it', extracted_data: { Q: { in_stock: { objective: 'yes', confidence_label: 'High' }, total_price_inr: { subjective: '190', confidence_label: 'High' }, ready_in_minutes: { subjective: '0' }, can_hold: { objective: 'yes' } } } }, 'webhook')
+    s = (await getSearch(searchId))!
+    const done = s.executions.find((e) => e.id === judge.id)!
+    expect(done).toMatchObject({ status: 'done', provider_execution_id: 'web-1', extracted: { in_stock: 'yes', total_price_inr: 190, can_hold: 'yes' } })
+    const ranked = rankResults(s.request, s.executions.map((e) => ({ id: e.id, shopName: e.shop.name, status: e.status, error: e.error, extracted: e.extracted })))
+    expect(ranked.find((r) => r.winner)?.shopName).toBe('Your shop') // has it, ready now, will hold it
+  })
+
+  it('counts daily caps atomically and stops at the limit', async () => {
+    const key = `zz-test:${crypto.randomUUID()}`
+    const bump = async () => (await db().rpc('bump_usage', { p_key: key, p_limit: 2 })).data
+    expect([await bump(), await bump(), await bump()]).toEqual([true, true, null])
+    await db().from('usage_counters').delete().eq('key', key)
+  })
+})
+

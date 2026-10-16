@@ -56,7 +56,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     return allowed.includes(v as T) ? (v as T) : null
   }
 
-  const mode = oneOf('mode', ['simulated', 'live'] as const, true)
+  const mode = oneOf('mode', ['simulated', 'live', 'judge'] as const, true)
   const product = text('product', 120, true)
   const quantity = num('quantity', 0.01, 1000, true)
   if (quantity !== null && Math.abs(Math.round(quantity * 100) - quantity * 100) > 1e-6) errors.quantity = 'At most two decimals'

@@ -38,6 +38,16 @@ export async function startCall(to: string, vars: Record<string, string>, langua
 }
 
 export const getExecution = (id: string) => bolna(`/executions/${encodeURIComponent(id)}`)
+
+// A single-use session (~120 s) for one browser call through Bolna's Web Call SDK, with the same variables and
+// language a phone call gets. Its run_id is the call's execution id, so webhooks and GET /executions/{id} work as for
+// a phone call. The SIP credentials go to the judge's browser only and are never stored. Minting starts an
+// execution on Bolna's side ("in-progress"), so it only happens on the judge's click.
+export async function createWebSession(vars: Record<string, string>, language: string) {
+  const s = await bolna('/web-call/session', { method: 'POST', body: JSON.stringify({ agent_id: process.env.BOLNA_AGENT_ID, user_data: { ...vars, timezone: 'Asia/Kolkata' }, agent_data: { language } }) })
+  if (typeof s?.run_id !== 'string') throw new BolnaHttpError('Bolna returned no web-call session')
+  return s as Record<string, unknown> & { run_id: string }
+}
 export const stopCall = (id: string) => bolna(`/call/${encodeURIComponent(id)}/stop`, { method: 'POST' })
 
 // Call audio. /recordings/call/{id} redirects to a pre-signed S3 link that expires after ~24 h; verified

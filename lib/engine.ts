@@ -1,7 +1,8 @@
+import { createHmac } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import replays from '@/data/replays.json'
-import { BolnaHttpError, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
-import { cfg, inCallingWindow, liveBlockers } from './config'
+import { BolnaHttpError, createWebSession, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
+import { cfg, clientIp, inCallingWindow, liveBlockers } from './config'
 import { quoteHeard } from './extraction'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { hasAndHolds } from './rank'
@@ -21,11 +22,12 @@ export function db() {
   return client
 }
 
-// Errors whose message is safe and useful to show the user (HTTP 400).
+// Errors whose message is safe and useful to show the user (HTTP 400; 429 when a daily cap is used up).
 export class UserError extends Error {}
+export class CapReached extends UserError {}
 
 export function errorResponse(e: unknown) {
-  if (e instanceof UserError) return Response.json({ error: e.message }, { status: 400 })
+  if (e instanceof UserError) return Response.json({ error: e.message }, { status: e instanceof CapReached ? 429 : 400 })
   console.error(e)
   return Response.json({ error: 'Something went wrong on the server. Please try again.' }, { status: 500 })
 }
@@ -44,6 +46,10 @@ const SHOP_COLS = 'id, name, area, city, language, source, phone, consent_status
 export const callable = (s: ShopRow | null) => Boolean(s && s.source === 'live' && s.phone && s.consent_status === 'verified' && !s.opted_out_at)
 
 // ---------- shops ----------
+const JUDGE_WAIT_MS = 15 * 60_000
+// Judge mode's own shop: the judge answers its call in the browser. One shared row, never callable by phone.
+export const JUDGE_SHOP = { id: 'judge-your-shop', name: 'Your shop', area: 'In your browser', language: 'hi', source: 'judge' }
+
 export async function listShops(mode: 'simulated' | 'live') {
   if (mode === 'simulated') return DEMO_SHOPS.map((s) => ({ id: s.id, name: s.name, area: s.area, language: s.language, callable: true, note: 'Simulated shop' }))
   const rows = must<ShopRow[]>(await db().from('shops').select(SHOP_COLS).eq('source', 'live').order('name'))
@@ -69,10 +75,11 @@ async function assertLiveBudget(n: number) {
 export async function createSearch(input: NewSearch) {
   const { shop_ids, ...fields } = input
   const shopLang: Record<string, string> = {}
-  if (input.mode === 'simulated') {
+  if (input.mode === 'simulated' || input.mode === 'judge') {
     const picked = DEMO_SHOPS.filter((s) => shop_ids.includes(s.id))
     if (picked.length !== shop_ids.length) throw new UserError('Unknown demo shop.')
-    must(await db().from('shops').upsert(picked.map((s) => ({ id: s.id, name: s.name, area: s.area, language: s.language, source: 'demo' }))))
+    if (input.mode === 'judge' && picked.length > 2) throw new UserError('Judge mode calls at most 2 simulated shops besides yours.')
+    must(await db().from('shops').upsert([...picked.map((s) => ({ id: s.id, name: s.name, area: s.area, language: s.language, source: 'demo' })), ...(input.mode === 'judge' ? [JUDGE_SHOP] : [])]))
     for (const s of picked) shopLang[s.id] = s.language
   } else {
     const rows = must<ShopRow[]>(await db().from('shops').select(SHOP_COLS).in('id', shop_ids))
@@ -83,10 +90,10 @@ export async function createSearch(input: NewSearch) {
   }
   const request = must<SearchRequest>(await db().from('search_requests').insert(fields).select('*').single())
   const now = new Date().toISOString()
-  const rows = shop_ids.map((shopId, i) => {
+  const rows: Record<string, unknown>[] = shop_ids.map((shopId, i) => {
     // Decided once, here, and stored: each shop is called in its own language when the agent speaks it.
     const language = callLanguage(shopLang[shopId], request.language)
-    const base = { request_id: request.id, shop_id: shopId, kind: 'quote', mode: input.mode, language }
+    const base = { request_id: request.id, shop_id: shopId, kind: 'quote', mode: input.mode === 'judge' ? 'simulated' : input.mode, language }
     if (input.mode === 'live') return { ...base, status: 'queued' }
     const pid = `sim-${crypto.randomUUID()}`
     const shop = DEMO_SHOPS.find((s) => s.id === shopId)!
@@ -94,6 +101,8 @@ export async function createSearch(input: NewSearch) {
     // Simulated calls get SIM_LINES lines, like a real account's concurrency limit; the rest wait (startSimulated).
     return i < SIM_LINES ? { ...sim, status: 'dispatching', dispatched_at: now } : { ...sim, status: 'queued' }
   })
+  // The judge's own call waits for their click ("Answer the call"), which mints a web-call session (startWebCall).
+  if (input.mode === 'judge') rows.push({ request_id: request.id, shop_id: JUDGE_SHOP.id, kind: 'quote', mode: 'judge', language: request.language, status: 'queued' })
   must(await db().from('call_executions').insert(rows))
   // The calls are saved: a dispatch hiccup must not fail the request (a retry would queue them twice).
   // The page's tick keeps dispatching.
@@ -214,15 +223,7 @@ async function dial(q: Row) {
   const found = q.kind === 'quote' && req.stop_when_found && (await foundElsewhere(q.request_id, req.quantity, q.id))
   if (found) return applyEvent({ id: q.id }, { status: '__failed', error_message: `not needed: already found at ${found}` }, 'dispatch')
   const language = q.language && Object.hasOwn(CALL_LANGS, q.language) ? (q.language as string) : req.language
-  const vars = {
-    greeting: CALL_LANGS[language].greeting, // the agent's welcome message is {greeting}: AI disclosure and recording notice
-    shop_name: shop.name,
-    item: itemLabel(req),
-    quantity: `${req.quantity} ${req.unit}`,
-    customer_area: req.area,
-    call_purpose: q.kind === 'hold' ? 'hold' : 'quote',
-    poochho_execution_id: q.id, // echoed back in webhooks, so a call can be matched even if storing its id fails
-  }
+  const vars = callVars(shop.name, req, q.kind, q.id, language)
   let pid: string
   try {
     pid = await startCall(shop.phone!, vars, language) // hold calls too: the prompt's Section 4A handles {call_purpose} = hold
@@ -246,6 +247,52 @@ async function dial(q: Row) {
 async function foundElsewhere(requestId: string, quantity: number, exceptId: string): Promise<string | null> {
   const rows = must<Row[]>(await db().from('call_executions').select('id, extracted, live_answer, shops(name)').eq('request_id', requestId).eq('kind', 'quote').neq('id', exceptId))
   return rows.find((r) => hasAndHolds(r.extracted ?? r.live_answer, Number(quantity)))?.shops?.name ?? null
+}
+
+// The agent's variables for one call, phone or browser.
+const callVars = (shopName: string, req: SearchRequest, kind: string, id: string, language: string) => ({
+  greeting: CALL_LANGS[language].greeting, // the agent's welcome message is {greeting}: AI disclosure and recording notice
+  shop_name: shopName,
+  item: itemLabel(req),
+  quantity: `${req.quantity} ${req.unit}`,
+  customer_area: req.area,
+  call_purpose: kind === 'hold' ? 'hold' : 'quote',
+  poochho_execution_id: id, // echoed back in webhooks, so a call can be matched even if storing its id fails
+})
+
+// The judge's call (judge mode): claimed once (queued → dispatching), then the daily cap is spent (`allowed`, so only a
+// real start counts) and a Bolna web-call session is minted for the browser. From then on it is an ordinary call:
+// webhooks and polling update it through the same pipeline.
+export async function startWebCall(executionId: string, allowed: () => Promise<boolean>) {
+  const claimed = must<Row[]>(
+    await db().from('call_executions').update({ status: 'dispatching', dispatched_at: new Date().toISOString() }).eq('id', executionId).eq('mode', 'judge').eq('status', 'queued').select('id, kind, language, shops(name), search_requests(product, brand_or_variant, quantity, unit, area, language)'),
+  )
+  const q = claimed[0]
+  if (!q) throw new UserError('This call has already started, or it is not a judge-mode call.')
+  const req = q.search_requests as SearchRequest
+  const language = q.language && Object.hasOwn(CALL_LANGS, q.language) ? (q.language as string) : req.language
+  try {
+    if (!(await allowed())) throw new CapReached("Today's judge-mode calls are used up. Please try again tomorrow, or watch a simulated run.")
+    const session = await createWebSession(callVars(q.shops.name, req, q.kind, q.id, language), language)
+    must(await db().from('call_executions').update({ provider_execution_id: session.run_id, provider_status: 'queued' }).eq('id', q.id))
+    await logEvent(q.id, 'dispatch', 'queued', { execution_id: session.run_id, kind: q.kind, via: 'web-call' })
+    return session
+  } catch (e) {
+    await db().from('call_executions').update({ status: 'queued', dispatched_at: null }).eq('id', q.id) // the judge can try again
+    throw e
+  }
+}
+
+// Daily caps on public features that cost money, counted atomically in the database (bump_usage): overall, and
+// per visitor as an HMAC of the IP (the IP itself is never stored).
+export async function withinDailyCap(kind: 'judge' | 'voice', req: Request) {
+  const [perIp, perDay] = kind === 'judge' ? [cfg.judgePerIp, cfg.judgePerDay] : [cfg.voicePerIp, cfg.voicePerDay]
+  const visitor = createHmac('sha256', process.env.SUPABASE_SECRET_KEY ?? '').update(clientIp(req)).digest('hex').slice(0, 16)
+  // The visitor's own counter first: once they hit their limit, they stop counting against everyone else's.
+  for (const [key, limit] of [[`${kind}:${visitor}`, perIp], [`${kind}:all`, perDay]] as const) {
+    if (must<boolean | null>(await db().rpc('bump_usage', { p_key: key, p_limit: limit })) !== true) return false
+  }
+  return true
 }
 
 // A webhook for a call whose provider id we failed to store: attach it via our own id (from user_data).
@@ -333,9 +380,12 @@ async function startSimulated(requestId: string, rows: Row[]) {
 // ---------- the tick: advances one search (client-driven, idempotent, safe to run from several tabs) ----------
 export async function tick(requestId: string) {
   const rows = must<Row[]>(
-    await db().from('call_executions').select('id, mode, status, provider_status, script, script_cursor, dispatched_at, answered_at, ended_at, provider_execution_id, last_polled_at').eq('request_id', requestId).order('created_at').order('id'),
+    await db().from('call_executions').select('id, mode, status, provider_status, script, script_cursor, dispatched_at, answered_at, ended_at, provider_execution_id, last_polled_at, created_at').eq('request_id', requestId).order('created_at').order('id'),
   )
   await startSimulated(requestId, rows)
+  // A judge call nobody answers expires, so the search can finish.
+  for (const q of rows.filter((r) => r.mode === 'judge' && r.status === 'queued' && Date.now() - Date.parse(r.created_at) > JUDGE_WAIT_MS))
+    await applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: nobody answered the judge-mode call within 15 minutes' }, 'dispatch')
   const now = Date.now()
   // Calls are independent, so each one's due steps are delivered in parallel (in order within a call). Each
   // step is claimed by moving the cursor; if delivering it fails, the cursor moves back so it is retried.
@@ -357,11 +407,12 @@ export async function tick(requestId: string) {
       }
     }),
   )
-  const live = rows.filter((r) => r.mode === 'live')
-  if (!live.length) return
-  await dispatchQueued()
+  // Calls with a real Bolna execution: phone calls and the judge's browser call.
+  const real = rows.filter((r) => r.mode === 'live' || r.mode === 'judge')
+  if (!real.length) return
+  if (real.some((r) => r.mode === 'live')) await dispatchQueued()
   const cutoff = new Date(now - 5000).toISOString()
-  for (const ex of live) {
+  for (const ex of real) {
     const age = ex.dispatched_at ? now - Date.parse(ex.dispatched_at) : 0
     const watch = ACTIVE.includes(ex.status as CallStatus)
     // A call Bolna rescheduled (outside its own calling hours) must not happen later: ask it to stop until

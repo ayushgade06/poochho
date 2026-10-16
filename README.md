@@ -43,8 +43,15 @@ shows that loop. The list of call languages and each language's opening line liv
 | **SIMULATED** (default) | Scripted calls to fictional demo shops, in Bolna's exact payload shape, through the real pipeline (DB, state machine, Realtime, ranking) | No |
 | **LIVE** | Real Bolna calls to consenting test shops. Locked unless configured; needs the operator token and an explicit confirmation | Yes |
 | **REPLAY** | Plays back a saved, sanitised run on its recorded timeline. Labelled with its source (real or simulated) | No |
+| **JUDGE** (`WEB_CALL_ENABLED=true`) | You play one shop ("Your shop") in your own browser through Bolna's Web Call SDK, alongside 2 simulated shops; your answers go through the same webhooks, extraction and ranking | No: a browser call |
 
-The three modes never look alike: hatched marigold, red with a pulsing dot, and indigo banners, plus per-card tags.
+The modes never look alike: hatched marigold, red with a pulsing dot, indigo and plum banners, plus per-card tags.
+
+**Try judge mode:** choose **Judge** on the home page, type what to ask for (say "Amul Butter, 2 packet, Kothrud,
+Pune"), start, then tap **Answer the call** on the "Your shop" card and answer the agent like a shopkeeper ("yes we
+have it, 190 rupees, ready now, I'll keep it for you"). Your card fills in, gets ranked against the simulated
+shops, and the summary can be heard in any of 11 languages. It needs a microphone; calls are capped per visitor
+and per day.
 
 ## Architecture
 
@@ -143,11 +150,13 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 | `MAX_LIVE_CALLS_PER_DAY` | | Default 25 |
 | `CALL_WINDOW_IST` | | Default `09:00-20:00` |
 | `CALL_WATCHDOG_SECONDS` | | Default 300 (minimum 120), measured from the last call milestone |
+| `WEB_CALL_ENABLED` | judge mode | `true` shows the Judge mode. `JUDGE_CALLS_PER_IP_PER_DAY` (3) and `JUDGE_CALLS_PER_DAY` (30) cap it |
+| `VOICE_INPUTS_PER_IP_PER_DAY`, `VOICE_INPUTS_PER_DAY` | optional | Daily caps on Sarvam voice input for visitors (20 and 300); the operator is not capped |
 | `SARVAM_API_KEY` | optional | Sarvam STT (`saaras:v4`, language auto-detected), form filling (`sarvam-105b-conversations`), translation (`sarvam-translate:v1`) and TTS (`bulbul:v3`). Without it the browser's speech APIs are used (Hindi/English only) |
 
 ## Database
 
-Six migrations in `supabase/migrations/`:
+Seven migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
@@ -158,6 +167,8 @@ Six migrations in `supabase/migrations/`:
   `search_requests.asked_in` (the language the user spoke the request in).
 - **`20261017000000_live_answers.sql`**: `call_executions.live_answer` / `live_answer_at` (heard mid-call),
   `search_requests.stop_when_found`, and `tool` as a `call_events` source.
+- **`20261017010000_judge_mode.sql`**: the `judge` mode and shop source, and `usage_counters` with
+  `bump_usage()` for the daily caps.
 
 Tables:
 
@@ -188,8 +199,12 @@ Apply them with either:
 - Call recordings (LIVE only) are operator-only, fetched from Bolna when played and streamed through; the link is
   never stored, and `call_events` keeps no recording links.
 - Labels and exports are operator-only.
-- Sarvam STT needs the operator token. Sarvam TTS only speaks the server-computed summary of an existing
-  search, so neither can be used as an open proxy on your key.
+- Sarvam voice input is open to everyone within daily caps per visitor and overall, counted atomically in the
+  database (`bump_usage`); a visitor is an HMAC of the IP, never the IP itself. Sarvam TTS only speaks the
+  server-computed summary of an existing search. Neither can be used as an open proxy on your key.
+- Judge mode mints a single-use Bolna web-call session (about two minutes) only when the judge clicks **Answer the
+  call**, capped the same way. Its SIP credentials go to that browser only; nothing is stored, and no recording is
+  played back.
 
 **Retention.** Data stays until you delete it. Delete everything older than 30 days with:
 
@@ -228,8 +243,8 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 84 unit tests (validation, extraction and the quote check, mid-call reports, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook, tool and recording routes with mocked dependencies) |
-| `npm run test:integration` | 19 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Simulated lines, answers heard mid-call and skipped calls. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, stop once found, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
+| `npm test` | 90 unit tests (validation, extraction and the quote check, mid-call reports, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook, tool, recording, web-call and voice routes with mocked dependencies) |
+| `npm run test:integration` | 21 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Simulated lines, answers heard mid-call and skipped calls. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, stop once found, judge mode's one-time browser session, the daily-cap counter, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |

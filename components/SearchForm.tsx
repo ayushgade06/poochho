@@ -11,10 +11,13 @@ type Config = {
   live: { blockers: string[]; inWindow: boolean; window: string }
   speech: 'sarvam' | 'browser'
   maxCalls: number
+  judge: boolean
   replays: { id: string; title: string; source: 'live' | 'simulated'; recorded_at: string }[]
 }
 type ShopOption = { id: string; name: string; area: string; language: string; callable: boolean; note: string }
-type Mode = 'simulated' | 'live' | 'replay'
+type Mode = 'simulated' | 'live' | 'replay' | 'judge'
+// Judge mode's simulated shops: ones that don't settle the search before the judge answers.
+const JUDGE_PICKS = ['demo-gupta-general', 'demo-patil-provision']
 
 const EMPTY = { product: '', brand_or_variant: '', quantity: '1', unit: 'piece', category: '', city: '', area: '', language: 'hi' as Lang, max_budget_inr: '', need_within_minutes: '', constraints: '' }
 const WITHIN = [['', 'Any time today'], ['30', 'Within 30 min'], ['60', 'Within 1 hour'], ['120', 'Within 2 hours'], ['240', 'Within 4 hours']]
@@ -43,13 +46,13 @@ export default function SearchForm() {
   useEffect(() => {
     if (mode === 'replay') return
     let cancelled = false
-    fetch(`/api/shops?mode=${mode}`)
+    fetch(`/api/shops?mode=${mode === 'judge' ? 'simulated' : mode}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return
         const list: ShopOption[] = d.shops ?? []
         setShops(list)
-        setPicked(list.filter((s) => s.callable).slice(0, config?.maxCalls ?? 5).map((s) => s.id))
+        setPicked(mode === 'judge' ? JUDGE_PICKS.filter((id) => list.some((s) => s.id === id)) : list.filter((s) => s.callable).slice(0, config?.maxCalls ?? 5).map((s) => s.id))
       })
       .catch(() => !cancelled && setFail('Could not load shops.'))
     return () => {
@@ -241,6 +244,8 @@ export default function SearchForm() {
 
   // ---------- review: exactly which shops will be called ----------
   const n = picked.length
+  const judge = mode === 'judge'
+  const max = judge ? 2 : (config?.maxCalls ?? 5) // judge mode: up to 2 simulated shops besides the judge's own
   const canStart = n > 0 && !busy && (mode !== 'live' || (consent && op.length >= 12 && !liveBlocked))
   return (
     <div className="rise space-y-5 rounded-2xl border border-line bg-card p-5 shadow-[0_18px_40px_-24px_rgb(28_25_21/0.35)] sm:p-7">
@@ -259,7 +264,7 @@ export default function SearchForm() {
       </div>
       <fieldset>
         <legend className="mb-2 font-semibold">
-          Shops to call <span className="font-normal text-muted">(up to {config?.maxCalls ?? 5})</span>
+          {judge ? 'Simulated shops called alongside yours' : 'Shops to call'} <span className="font-normal text-muted">(up to {max})</span>
         </legend>
         {!shops ? (
           <p className="text-muted">Loading shops…</p>
@@ -271,7 +276,7 @@ export default function SearchForm() {
           <ul className="grid gap-2 sm:grid-cols-2">
             {shops.map((s) => {
               const on = picked.includes(s.id)
-              const full = !on && n >= (config?.maxCalls ?? 5)
+              const full = !on && n >= max
               return (
                 <li key={s.id}>
                   <label className={`flex h-full items-start gap-3 rounded-xl border p-3 ${!s.callable ? 'cursor-not-allowed border-line bg-paper/60 opacity-60' : on ? 'cursor-pointer border-ink bg-white' : 'cursor-pointer border-line bg-white/60'}`}>
@@ -288,13 +293,26 @@ export default function SearchForm() {
             })}
           </ul>
         )}
+        {judge && (
+          <p className="mt-2 rounded-xl border-2 border-plum bg-plum/10 p-3">
+            <span className="block font-semibold">Your shop</span>
+            <span className="text-sm text-muted">You answer this call in your browser (microphone needed) · called in {CALL_LANGS[f.language].name}</span>
+          </p>
+        )}
       </fieldset>
+      {judge ? (
+        <p className="text-sm text-muted">
+          After you start, tap <strong>Answer the call</strong> on your card. The assistant asks Your shop about {f.product}: answer the way a shopkeeper would. Your answers are ranked
+          against the simulated shops&apos;. The transcript is visible to anyone with this search&apos;s link; no recording is played back. Calls are capped per visitor per day.
+        </p>
+      ) : (
       <label className="flex items-start gap-3 rounded-xl border border-line bg-white p-3">
         <input type="checkbox" className="mt-1 size-4 accent-ink" checked={stopWhenFound} onChange={(e) => setStopWhenFound(e.target.checked)} />
         <span>
           Stop calling once a shop confirms it has all of it and will hold it <span className="text-muted">— saves shopkeepers&apos; time and credits</span>
         </span>
       </label>
+      )}
       <p className="text-sm text-muted">
         All selected shops are called at the same time, as many as there are free lines. Each call takes about 45 seconds. The assistant says it is an AI first, asks about stock, price and holding, and never shares your
         number. Failed calls are not retried automatically.
@@ -321,8 +339,8 @@ export default function SearchForm() {
         <button className="rounded-xl border border-line bg-white px-5 py-3.5 font-semibold" onClick={() => setStep('form')} disabled={busy}>
           ← Edit
         </button>
-        <button className={`flex-1 rounded-xl px-5 py-3.5 text-lg font-semibold text-white disabled:opacity-40 ${mode === 'live' ? 'bg-chili' : 'bg-kirana'}`} disabled={!canStart} onClick={start}>
-          {busy ? 'Starting calls…' : `${mode === 'live' ? 'Place' : 'Simulate'} ${n} call${n === 1 ? '' : 's'}`}
+        <button className={`flex-1 rounded-xl px-5 py-3.5 text-lg font-semibold text-white disabled:opacity-40 ${mode === 'live' ? 'bg-chili' : judge ? 'bg-plum' : 'bg-kirana'}`} disabled={!canStart} onClick={start}>
+          {busy ? 'Starting calls…' : judge ? `Start: ${n} simulated call${n === 1 ? '' : 's'} + yours` : `${mode === 'live' ? 'Place' : 'Simulate'} ${n} call${n === 1 ? '' : 's'}`}
         </button>
       </div>
     </div>
@@ -334,13 +352,14 @@ function ModeSwitch({ mode, setMode, config, liveBlocked }: { mode: Mode; setMod
     { m: 'simulated', title: 'Simulated', sub: 'Scripted demo, no phones ring' },
     { m: 'live', title: 'Live', sub: 'Real calls to test shops', off: liveBlocked ? (config?.live.blockers.length ? `Not configured: ${config.live.blockers.join('; ')}` : `Only ${config?.live.window} IST`) : undefined },
     { m: 'replay', title: 'Replay', sub: 'Play back a recorded run' },
+    ...(config?.judge ? [{ m: 'judge' as const, title: 'Judge', sub: 'You be the shopkeeper' }] : []),
   ]
   return (
     <fieldset>
       <legend className="sr-only">Mode</legend>
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid gap-2 ${opts.length === 4 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
         {opts.map((o) => (
-          <label key={o.m} className={`rounded-xl border-2 px-3 py-2.5 ${mode === o.m ? (o.m === 'live' ? 'border-chili bg-chili-soft' : o.m === 'replay' ? 'border-indigo bg-indigo-soft' : 'hatch border-marigold bg-marigold-soft') : 'border-line bg-white'} ${o.off ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+          <label key={o.m} className={`rounded-xl border-2 px-3 py-2.5 ${mode === o.m ? (o.m === 'live' ? 'border-chili bg-chili-soft' : o.m === 'replay' ? 'border-indigo bg-indigo-soft' : o.m === 'judge' ? 'border-plum bg-plum/10' : 'hatch border-marigold bg-marigold-soft') : 'border-line bg-white'} ${o.off ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
             <input type="radio" name="mode" className="sr-only" checked={mode === o.m} disabled={!!o.off && o.m === 'live'} onChange={() => setMode(o.m)} />
             <span className="block font-semibold">{o.title}</span>
             <span className="block text-xs leading-snug text-muted">{o.off && o.m === 'live' ? 'Locked (see below)' : o.sub}</span>
@@ -376,18 +395,20 @@ type Heard = { language: VoiceLang | null; fields: Record<string, string | numbe
 type Recognition = { lang: string; interimResults: boolean; onresult: (e: { results: { 0: { transcript: string } }[] }) => void; onerror: () => void; onend: () => void; start: () => void }
 function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 'browser'; onText: (t: string, sarvam?: Heard) => void }) {
   const [state, setState] = useState<'idle' | 'listening' | 'working' | 'error'>('idle')
+  const [why, setWhy] = useState<string | null>(null) // the server's reason, e.g. today's voice inputs are used up
   const rec = useRef<MediaRecorder | null>(null)
-  // Browser-only capability (null on the server). Sarvam needs the operator token; otherwise the browser's own
-  // speech recognition is used when available.
-  const how = useSyncExternalStore(
+  // Browser-only capabilities ('' on the server): s = Sarvam (open to everyone within daily caps; the operator is
+  // not capped), b = the browser's own speech recognition, used when Sarvam isn't configured or is capped for today.
+  const caps = useSyncExternalStore(
     noop,
     () => {
       const w = window as unknown as Record<string, unknown>
-      if (speech === 'sarvam' && token.get() && typeof navigator.mediaDevices?.getUserMedia === 'function') return 'sarvam'
-      return w.SpeechRecognition || w.webkitSpeechRecognition ? 'browser' : null
+      return (speech === 'sarvam' && typeof navigator.mediaDevices?.getUserMedia === 'function' ? 's' : '') + (w.SpeechRecognition || w.webkitSpeechRecognition ? 'b' : '')
     },
-    () => null,
+    () => '',
   )
+  const [sarvamOff, setSarvamOff] = useState(false)
+  const how = caps.includes('s') && !sarvamOff ? 'sarvam' : caps.includes('b') ? 'browser' : null
   if (!how) return null
 
   async function go() {
@@ -416,6 +437,8 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
         fd.append('audio', new Blob(chunks, { type: mr.mimeType || 'audio/webm' }))
         const r = await fetch('/api/stt', { method: 'POST', body: fd, headers: { 'x-admin-token': token.get() } }).catch(() => null)
         const d = r && (await r.json().catch(() => null))
+        if (r?.status === 429 || r?.status === 501) setSarvamOff(true) // capped for today: fall back to the browser
+        setWhy(r && !r.ok ? `${d?.error ?? 'Voice input failed.'} ${caps.includes('b') ? "Tap again to use this browser's speech." : 'Please type your request.'}` : null)
         if (r?.ok && d?.transcript) {
           onText(d.transcript, d)
           setState('idle')
@@ -431,7 +454,7 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
   return (
     <button type="button" onClick={go} className={`mb-1.5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${state === 'listening' ? 'border-chili bg-chili text-white' : 'border-line bg-white text-ink'}`} aria-live="polite">
       <span aria-hidden>{state === 'listening' ? '■' : '🎙'}</span>
-      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? "Didn't catch that, try again" : how === 'sarvam' ? 'Speak in any Indian language' : 'Speak (browser)'}
+      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? (why ?? "Didn't catch that, try again") : how === 'sarvam' ? 'Speak in any Indian language' : 'Speak (browser)'}
     </button>
   )
 }
