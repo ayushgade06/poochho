@@ -1,5 +1,5 @@
 import { isUsableQuote, parseExtraction } from './extraction'
-import type { CallStatus, Execution, Extraction, ProviderEvent } from './types'
+import type { CallStatus, Execution, Extraction, LiveAnswer, ProviderEvent } from './types'
 
 // Bolna execution statuses → internal model. Unknown statuses are ignored (data still merges).
 const MAP: Record<string, CallStatus> = {
@@ -23,19 +23,22 @@ const MAP: Record<string, CallStatus> = {
   // Synthetic statuses raised by Poochho itself (never sent by the provider).
   __timeout: 'timeout',
   __failed: 'failed',
+  __live: 'talking', // the agent reported an answer mid-call, so someone is on the line
 }
 const RANK: Record<CallStatus, number> = { queued: 0, dispatching: 1, ringing: 2, talking: 3, processing: 4, timeout: 4, done: 5, failed: 5 }
 
 export const mapStatus = (s: string): CallStatus | null => MAP[s?.toLowerCase?.()] ?? null
 export const isTerminal = (s: CallStatus) => s === 'done' || s === 'failed'
 export const ACTIVE: CallStatus[] = ['dispatching', 'ringing', 'talking', 'processing']
+// A queued call that was never dialled because another shop had already confirmed everything (stop_when_found).
+export const notNeeded = (error: string | null | undefined) => Boolean(error?.startsWith('not needed: '))
 
-type State = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at'>
+type State = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at' | 'live_answer'>
 
 // Pure merge of one provider event into the stored state. Returns null when nothing changes, which makes
 // duplicate deliveries no-ops. Rules: status only moves forward; done/failed are final; our own "timeout"
 // yields only to a final provider outcome; transcripts, durations and costs only grow; a final ("completed")
-// extraction wins.
+// extraction wins; an answer heard mid-call is merged field by field until the post-call extraction exists.
 export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
   const patch: Partial<Execution> = {}
   // Bolna: "completed" with conversation_duration 0 means no conversation took place.
@@ -69,6 +72,13 @@ export function mergeEvent(cur: State, ev: ProviderEvent, now: string) {
     patch.extracted = x
     patch.raw_extracted = ev.extracted_data
     if (!cur.first_quote_at && isUsableQuote(x)) patch.first_quote_at = now
+  }
+  if (ev.live && !cur.extracted && !patch.extracted && !isTerminal(cur.status)) {
+    const live = { ...cur.live_answer, ...ev.live }
+    if (!cur.live_answer || (Object.keys(live) as (keyof LiveAnswer)[]).some((k) => live[k] !== cur.live_answer![k])) {
+      patch.live_answer = live
+      patch.live_answer_at = now
+    }
   }
   return Object.keys(patch).length ? patch : null
 }

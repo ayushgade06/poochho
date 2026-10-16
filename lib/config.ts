@@ -29,6 +29,19 @@ export const safeEqual = (a: string, b: string) => {
   return x.length === y.length && timingSafeEqual(x, y)
 }
 
+// Requests from Bolna (webhooks, tool calls). Bolna doesn't sign them; its documented trust mechanisms are custom
+// headers and source IPs, so: a shared-secret header (never the URL, which ends up in logs) and an optional IP
+// allowlist. Returns the rejection, or null when the request may proceed.
+export function bolnaDenied(req: Request) {
+  const secret = process.env.BOLNA_WEBHOOK_SECRET
+  const given = req.headers.get('x-poochho-secret')
+  if (!secret || !given || !safeEqual(given, secret)) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  const allow = (process.env.BOLNA_WEBHOOK_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
+  if (allow.length && !allow.includes(ip)) return Response.json({ error: 'forbidden' }, { status: 403 })
+  return null
+}
+
 // Privileged routes (live calls, labels, exports) need the operator token. No token configured = locked.
 export function isAdmin(req: Request) {
   const token = process.env.POOCHHO_ADMIN_TOKEN

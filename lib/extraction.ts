@@ -1,4 +1,4 @@
-import type { Extraction } from './types'
+import type { Extraction, LiveAnswer } from './types'
 
 const FIELDS = ['in_stock', 'unit_price_inr', 'total_price_inr', 'price_unit', 'qty_available', 'brand_or_variant', 'pickup_or_delivery', 'ready_in_minutes', 'can_hold', 'opt_out', 'notes', 'stock_quote', 'confidence']
 const key = (k: string) => k.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
@@ -111,6 +111,23 @@ export function quoteHeard(quote: string | null | undefined, transcript: string 
     shop = isShop
   }
   return turns.some((t) => ` ${words(t)} `.includes(` ${q} `)) // whole words only
+}
+
+// The agent's report_availability tool call (mid-call). Bolna substitutes every value into a string ("True",
+// "None", "540.0"), so each is read with the same rules as the post-call extraction. Only what was actually said
+// is kept, so a later report adds to an earlier one instead of erasing it. price_inr is for the whole quantity.
+export function parseLive(raw: unknown): LiveAnswer | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const yn = (v: unknown) => (/^true$/i.test(String(v).trim()) ? 'yes' : /^false$/i.test(String(v).trim()) ? 'no' : v)
+  const x = parseExtraction({ in_stock: yn(o.in_stock), can_hold: yn(o.can_hold), qty_available: o.qty_available, total_price_inr: o.price_inr, ready_in_minutes: o.ready_in_minutes })!
+  const live: LiveAnswer = {}
+  if (x.in_stock !== 'unsure') live.in_stock = x.in_stock
+  if (x.can_hold !== 'unknown') live.can_hold = x.can_hold
+  if (x.qty_available !== null) live.qty_available = x.qty_available
+  if (x.total_price_inr !== null) live.price_inr = x.total_price_inr
+  if (x.ready_in_minutes !== null) live.ready_in_minutes = x.ready_in_minutes
+  return Object.keys(live).length ? live : null
 }
 
 // A quote is usable once availability is known and, if available, a price was given.

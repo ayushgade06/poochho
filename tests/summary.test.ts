@@ -25,6 +25,15 @@ describe('summarize', () => {
     expect(summarize(req, now, 'en')).toContain('Best option: A has all 2 packets, ready now. Price not quoted.')
   })
 
+  it('says how many shops were not called because it was already found', () => {
+    const r = rankResults(req, [
+      { id: 'a', shopName: 'Sharma Kirana', status: 'done', error: null, extracted: x({ total_price_inr: 540 }) },
+      { id: 'b', shopName: 'Gupta', status: 'failed', error: 'not needed: already found at Sharma Kirana', extracted: null },
+    ])
+    expect(summarize(req, r, 'en')).toBe('I called 1 shop. 1 answered and 1 has Amul Butter. Best option: Sharma Kirana has all 2 packets, ready in about 10 minutes, and says it can keep it for you. Price: 540 rupees in total. It was already found, so 1 more shop was not called.')
+    expect(summarize(req, r, 'hi')).toContain('सामान मिल गया था, इसलिए 1 और दुकान को call नहीं किया।')
+  })
+
   it('says so when nobody can fully help', () => {
     const none = rankResults(req, [{ id: 'a', shopName: 'A', status: 'done', error: null, extracted: x({ in_stock: 'no' }) }])
     expect(summarize(req, none, 'en')).toContain('No shop confirmed all 2 packets.')
@@ -59,12 +68,13 @@ describe('holdOutcome and shareText', () => {
 })
 
 describe('timeSaved', () => {
-  const c = (d: string, e: string | null, kind: 'quote' | 'hold' = 'quote') => ({ kind, dispatched_at: `2026-10-16T10:00:${d}Z`, ended_at: e && `2026-10-16T10:${e}Z` })
+  const c = (d: string, e: string | null, kind: 'quote' | 'hold' = 'quote') => ({ kind, dispatched_at: `2026-10-16T10:00:${d}Z`, ended_at: e && `2026-10-16T10:${e}Z`, error: null })
   it('compares the measured parallel time with calling one by one', () => {
     expect(timeSaved([c('00', '00:40'), c('01', '00:51'), c('02', '00:32'), c('00', '05:00', 'hold')])).toEqual({ calls: 3, parallelSec: 51, sequentialSec: 120 })
   })
-  it('waits until every quote call has ended', () => {
+  it('waits until every quote call has ended, ignoring calls that were never dialled', () => {
     expect(timeSaved([c('00', '00:40'), c('01', null)])).toBeNull()
     expect(timeSaved([])).toBeNull()
+    expect(timeSaved([c('00', '00:40'), c('01', '00:51'), { kind: 'quote', dispatched_at: null, ended_at: '2026-10-16T10:00:52Z', error: 'not needed: already found at A' }])).toEqual({ calls: 2, parallelSec: 51, sequentialSec: 90 })
   })
 })

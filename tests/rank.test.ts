@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rankResults, stockOf, WEIGHTS, winnerReason } from '@/lib/rank'
+import { hasAndHolds, rankResults, stockOf, WEIGHTS, winnerReason } from '@/lib/rank'
 import type { Extraction } from '@/lib/types'
 
 const req = { quantity: 2, unit: 'packet', max_budget_inr: null, need_within_minutes: null }
@@ -18,6 +18,16 @@ describe('rankResults', () => {
     expect(winnerReason(r)).toMatch(/^Ready soonest of 2 shops with the full quantity; shop says it can hold the item/)
     expect(stockOf(x({ qty_available: 1 }), 2)).toBe('short')
     expect(stockOf(x({ in_stock: 'unsure' }), 2)).toBe('unknown')
+  })
+
+  it('knows when a shop has it all and will hold it (final or live answer), and labels calls skipped for that', () => {
+    expect(hasAndHolds(x({ can_hold: 'yes' }), 2)).toBe(true)
+    expect(hasAndHolds({ in_stock: 'yes', can_hold: 'yes' }, 2)).toBe(true) // heard live, quantity not stated
+    expect(hasAndHolds({ in_stock: 'yes', qty_available: 1, can_hold: 'yes' }, 2)).toBe(false)
+    expect(hasAndHolds({ in_stock: 'yes', can_hold: 'unknown' }, 2)).toBe(false)
+    expect(hasAndHolds(null, 2)).toBe(false)
+    const r = rankResults(req, [{ id: 's', shopName: 'S', status: 'failed', error: 'not needed: already found at Sharma Kirana', extracted: null }])
+    expect(r[0]).toMatchObject({ skipped: true, explanation: 'Not called: already found at Sharma Kirana' })
   })
 
   it('takes the unit price from a stated total, not a per-unit figure that disagrees with it', () => {

@@ -20,6 +20,7 @@ describe('computeMetrics', () => {
       row({ id: 'c', status: 'failed', answered_at: null, first_quote_at: null, error: 'no-answer' }),
       row({ id: 'd', status: 'timeout', answered_at: null, first_quote_at: null }),
       row({ id: 'e', status: 'queued', dispatched_at: null, answered_at: null, first_quote_at: null }), // never dialled: excluded
+      row({ id: 'f', status: 'failed', answered_at: null, first_quote_at: null, error: 'not needed: already found at A' }), // claimed, then skipped: excluded
     ])
     expect(m).toMatchObject({ initiated: 4, answered: 2, completed: 2, failed: 2, answerRate: 0.5, failureRate: 0.5, medianFirstQuoteSec: 50, firstQuoteN: 2 })
     expect(m.byLanguage).toEqual([{ language: 'hi', n: 4, answered: 2, completed: 2 }])

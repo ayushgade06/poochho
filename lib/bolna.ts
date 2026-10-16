@@ -1,3 +1,4 @@
+import { parseLive } from './extraction'
 import type { ProviderEvent } from './types'
 
 // Documented at https://www.bolna.ai/docs/api-reference (base URL, Bearer auth, POST /call, GET /executions/{id}).
@@ -81,6 +82,8 @@ export function toEvent(p: unknown): (ProviderEvent & { id: string; ourId: strin
     error_message: typeof o.error_message === 'string' ? o.error_message : null,
     answered_by_voice_mail: o.answered_by_voice_mail === true,
     cost: Number.isFinite(cost) && cost >= 0 ? cost : null,
+    // Scripted (SIMULATED/REPLAY) tool calls: { status: '__live', tool_call: <report_availability params> }.
+    live: parseLive(o.tool_call),
   }
 }
 

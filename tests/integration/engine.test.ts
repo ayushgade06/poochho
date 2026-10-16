@@ -8,7 +8,7 @@ import { DEMO_SHOPS } from '@/lib/sim'
 
 const created: string[] = []
 const TEST_SHOP = 'zz-test-live-shop'
-const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null }
+const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true }
 const five = ['demo-sharma-kirana', 'demo-gupta-general', 'demo-patil-provision', 'demo-new-bharat', 'demo-mehta-general']
 
 // Make every scripted step due now, instead of waiting ~25 s of simulated call time.
@@ -25,13 +25,14 @@ afterAll(async () => {
 describe('SIMULATED search end to end', () => {
   let id = ''
 
-  it('persists a search with one execution per shop', async () => {
-    id = await createSearch({ ...base, shop_ids: five })
+  it('persists a search with one execution per shop, three lines at a time', async () => {
+    id = await createSearch({ ...base, stop_when_found: false, shop_ids: five })
     created.push(id)
     const s = (await getSearch(id))!
-    expect(s.request).toMatchObject({ mode: 'simulated', product: 'Amul Butter', quantity: 2 })
+    expect(s.request).toMatchObject({ mode: 'simulated', product: 'Amul Butter', quantity: 2, stop_when_found: false })
     expect(s.executions).toHaveLength(5)
-    expect(s.executions.every((e) => e.status === 'dispatching' && e.shop?.name)).toBe(true)
+    expect(s.executions.map((e) => e.status).sort()).toEqual(['dispatching', 'dispatching', 'dispatching', 'queued', 'queued'])
+    expect(s.executions.every((e) => e.shop?.name)).toBe(true)
     expect(s.executions.some((e) => 'script' in e || 'version' in e)).toBe(false) // the scripted future is never sent to clients
   })
 
@@ -51,7 +52,7 @@ describe('SIMULATED search end to end', () => {
     const ids = s.executions.map((e) => e.id)
     const ev = await db().from('call_events').select('execution_id').in('execution_id', ids)
     const sharmaEvents = ev.data!.filter((r) => r.execution_id === by['demo-sharma-kirana'].id).length
-    expect(sharmaEvents).toBe(6) // queued, initiated, ringing, in-progress, call-disconnected, completed: no duplicates
+    expect(sharmaEvents).toBe(8) // queued, initiated, ringing, in-progress, 2 reports heard live, call-disconnected, completed: no duplicates
   })
 
   it('ranks the verified results deterministically', async () => {
@@ -100,6 +101,31 @@ describe('SIMULATED search end to end', () => {
     const hold = (await getSearch(id))!.executions.find((e) => e.kind === 'hold')!
     expect(hold).toMatchObject({ status: 'done', shop_id: 'demo-sharma-kirana' })
     expect(hold.extracted?.can_hold).toBe('yes')
+  })
+})
+
+describe('stop calling once found (SIMULATED)', () => {
+  // Delivers the steps of the calls already on a line, as if `seconds` had passed since they were dialled.
+  const advance = async (requestId: string, seconds: number) => {
+    await db().from('call_executions').update({ dispatched_at: new Date(Date.now() - seconds * 1000).toISOString() }).eq('request_id', requestId).not('dispatched_at', 'is', null)
+    await tick(requestId)
+  }
+
+  it('shows answers heard mid-call, then skips queued shops once one has it all and will hold it', async () => {
+    const sid = await createSearch({ ...base, shop_ids: five })
+    created.push(sid)
+    await advance(sid, 16) // Sharma has said it has both packets and can hold them (at ~15 s); nobody has hung up yet
+    let s = (await getSearch(sid))!
+    const sharma = s.executions.find((e) => e.shop_id === 'demo-sharma-kirana')!
+    expect(sharma).toMatchObject({ status: 'talking', extracted: null, live_answer: { in_stock: 'yes', can_hold: 'yes' } })
+    expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(2) // no free line yet
+    await advance(sid, 60) // the first three calls end: lines free up, but the item is already found
+    await tick(sid)
+    s = (await getSearch(sid))!
+    const skipped = s.executions.filter((e) => e.error === 'not needed: already found at Sharma Kirana Store')
+    expect(skipped.map((e) => e.shop_id).sort()).toEqual(['demo-mehta-general', 'demo-new-bharat'])
+    expect(skipped.every((e) => e.status === 'failed' && !e.dispatched_at)).toBe(true)
+    expect(s.executions.find((e) => e.shop_id === 'demo-sharma-kirana')!.extracted).toMatchObject({ in_stock: 'yes', can_hold: 'yes' }) // the final answer replaced the live one
   })
 })
 

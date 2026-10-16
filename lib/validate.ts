@@ -14,6 +14,7 @@ export type NewSearch = {
   need_within_minutes: number | null
   constraints: string | null
   asked_in: VoiceLang | null
+  stop_when_found: boolean
   shop_ids: string[]
 }
 
@@ -61,6 +62,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
   if (quantity !== null && Math.abs(Math.round(quantity * 100) - quantity * 100) > 1e-6) errors.quantity = 'At most two decimals'
   const unit = oneOf('unit', UNITS, true)
   const language = oneOf('language', Object.keys(LANGS) as Lang[], true)
+  if (b.stop_when_found !== undefined && typeof b.stop_when_found !== 'boolean') errors.stop_when_found = 'Must be true or false'
   const shopIds = Array.isArray(b.shop_ids) ? [...new Set(b.shop_ids)] : []
   if (!shopIds.length) errors.shop_ids = 'Pick at least one shop'
   else if (shopIds.length > maxCalls) errors.shop_ids = `At most ${maxCalls} shops per search`
@@ -80,6 +82,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     need_within_minutes: num('need_within_minutes', 5, 1440, false, true),
     constraints: text('constraints', 300),
     asked_in: oneOf('asked_in', Object.keys(VOICE_LANGS) as VoiceLang[]),
+    stop_when_found: b.stop_when_found !== false, // on unless the user turned it off
     shop_ids: shopIds as string[],
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value }

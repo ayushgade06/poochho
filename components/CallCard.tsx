@@ -2,15 +2,20 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { inr } from '@/lib/rank'
-import { CALL_LANGS, type PublicExecution } from '@/lib/types'
+import { notNeeded } from '@/lib/state'
+import { CALL_LANGS, type LiveAnswer, type PublicExecution } from '@/lib/types'
 import { Lamp, Proof, reason, STATUS, token } from './ui'
 
 const clock = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`
 
 const noop = () => () => {}
+const stock = (inStock: LiveAnswer['in_stock'], qty: number | null | undefined, quantity: number) =>
+  inStock === 'yes' ? (qty != null && qty < quantity ? `only ${qty}` : 'yes') : inStock === 'partial' ? (qty != null ? `only ${qty}` : 'partial') : inStock === 'no' ? 'no' : 'unclear'
+const tone = (v: string | undefined) => (v === 'yes' ? 'good' : v === 'no' ? 'bad' : 'warn')
 
 export default function CallCard({ e, now, quantity }: { e: PublicExecution; now: number; quantity: number }) {
-  const s = STATUS[e.status]
+  const skipped = e.status === 'failed' && notNeeded(e.error) // never dialled: another shop already had it all
+  const s = skipped ? { label: 'Not called', tone: 'text-muted' } : STATUS[e.status]
   const operator = useSyncExternalStore(noop, () => Boolean(token.get()), () => false)
   const live = !['done', 'failed', 'timeout'].includes(e.status)
   const x = e.extracted
@@ -23,7 +28,7 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
   return (
     <article className={`rise flex flex-col rounded-2xl border bg-card p-5 ${e.kind === 'hold' ? 'border-indigo/50' : 'border-line'}`} aria-label={`${e.shop.name}: ${s.label}`}>
       <div className="flex items-start gap-3">
-        <Lamp status={e.status} />
+        <Lamp status={skipped ? 'queued' : e.status} />
         <div className="min-w-0 flex-1">
           <h3 className="font-display text-2xl leading-tight break-words">{e.shop.name}</h3>
           <p className="text-sm text-muted">
@@ -42,10 +47,11 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
         {(e.status === 'failed' || e.status === 'timeout') && reason(e.error) && <span className="font-normal text-muted"> · {reason(e.error)}</span>}
       </p>
       {e.kind === 'quote' && <Proof e={e} now={now} className="mt-1" />}
+      {e.live_answer && !(x && e.status === 'done') && <Live a={e.live_answer} quantity={quantity} />}
 
       {x && e.status === 'done' && (
         <dl className="mt-3 flex flex-wrap gap-2 text-sm">
-          <Chip k="Stock" v={x.in_stock === 'yes' ? (x.qty_available !== null && x.qty_available < quantity ? `only ${x.qty_available}` : 'yes') : x.in_stock === 'partial' ? (x.qty_available !== null ? `only ${x.qty_available}` : 'partial') : x.in_stock === 'no' ? 'no' : 'unclear'} tone={x.in_stock === 'yes' ? 'good' : x.in_stock === 'no' ? 'bad' : 'warn'} />
+          <Chip k="Stock" v={stock(x.in_stock, x.qty_available, quantity)} tone={tone(x.in_stock)} />
           {x.in_stock !== 'no' && (
             <Chip k="Price" v={x.total_price_inr !== null ? `${inr(x.total_price_inr)} total` : x.unit_price_inr !== null ? (x.price_unit ? `${inr(x.unit_price_inr)} / ${x.price_unit}` : `${inr(x.unit_price_inr)} (unit not stated)`) : 'not quoted'} tone={x.total_price_inr ?? x.unit_price_inr ? 'good' : 'warn'} />
           )}
@@ -64,6 +70,26 @@ export default function CallCard({ e, now, quantity }: { e: PublicExecution; now
       {lines.length > 0 && <Transcript lines={lines} />}
       {e.answered_at && e.ended_at && (e.mode === 'live' ? operator && <Recording id={e.id} /> : <p className="mt-3 text-xs text-muted">{e.mode === 'simulated' ? 'Simulated call — no audio' : 'Replayed call — no audio'}</p>)}
     </article>
+  )
+}
+
+// What the agent reported mid-call (its report_availability tool), before the call's final answers replace it.
+function Live({ a, quantity }: { a: LiveAnswer; quantity: number }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <span className="rounded-full bg-indigo-soft px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-indigo">
+        <span className="blink" aria-hidden>
+          ●
+        </span>{' '}
+        Heard live · provisional
+      </span>
+      <dl className="contents">
+        {a.in_stock && <Chip k="Stock" v={stock(a.in_stock, a.qty_available, quantity)} tone={tone(a.in_stock)} />}
+        {a.price_inr != null && <Chip k="Price" v={`${inr(a.price_inr)} total`} tone="good" />}
+        {a.ready_in_minutes != null && <Chip k="Ready" v={a.ready_in_minutes === 0 ? 'now' : `~${a.ready_in_minutes} min`} tone="good" />}
+        {a.can_hold && <Chip k="Can hold" v={a.can_hold} tone={tone(a.can_hold)} />}
+      </dl>
+    </div>
   )
 }
 

@@ -4,8 +4,9 @@ import { BolnaHttpError, getExecution, sanitize, startCall, stopCall, toEvent } 
 import { cfg, inCallingWindow, liveBlockers } from './config'
 import { quoteHeard } from './extraction'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
-import { DEMO_SHOPS, holdScript, itemLabel, quoteScript } from './sim'
-import { ACTIVE, mergeEvent } from './state'
+import { hasAndHolds } from './rank'
+import { DEMO_SHOPS, holdScript, itemLabel, quoteScript, SIM_LINES } from './sim'
+import { ACTIVE, mergeEvent, notNeeded } from './state'
 import { CALL_LANGS, callLanguage, type CallStatus, type Execution, type ProviderEvent, type PublicExecution, type ScriptEvent, type SearchRequest, type SearchState } from './types'
 import type { NewSearch } from './validate'
 
@@ -37,7 +38,7 @@ function must<T = Row>(r: { data: unknown; error: { message: string } | null }):
   return r.data as T
 }
 
-type Source = 'webhook' | 'poll' | 'simulated' | 'replay' | 'dispatch' | 'watchdog'
+type Source = 'webhook' | 'poll' | 'simulated' | 'replay' | 'dispatch' | 'watchdog' | 'tool'
 type ShopRow = { id: string; name: string; area: string; city: string; language: string; source: string; phone: string | null; consent_status: string; opted_out_at: string | null }
 const SHOP_COLS = 'id, name, area, city, language, source, phone, consent_status, opted_out_at'
 export const callable = (s: ShopRow | null) => Boolean(s && s.source === 'live' && s.phone && s.consent_status === 'verified' && !s.opted_out_at)
@@ -82,14 +83,16 @@ export async function createSearch(input: NewSearch) {
   }
   const request = must<SearchRequest>(await db().from('search_requests').insert(fields).select('*').single())
   const now = new Date().toISOString()
-  const rows = shop_ids.map((shopId) => {
+  const rows = shop_ids.map((shopId, i) => {
     // Decided once, here, and stored: each shop is called in its own language when the agent speaks it.
     const language = callLanguage(shopLang[shopId], request.language)
     const base = { request_id: request.id, shop_id: shopId, kind: 'quote', mode: input.mode, language }
     if (input.mode === 'live') return { ...base, status: 'queued' }
     const pid = `sim-${crypto.randomUUID()}`
     const shop = DEMO_SHOPS.find((s) => s.id === shopId)!
-    return { ...base, status: 'dispatching', provider_execution_id: pid, dispatched_at: now, script: quoteScript(shop, request, language, pid) }
+    const sim = { ...base, provider_execution_id: pid, script: quoteScript(shop, request, language, pid) }
+    // Simulated calls get SIM_LINES lines, like a real account's concurrency limit; the rest wait (startSimulated).
+    return i < SIM_LINES ? { ...sim, status: 'dispatching', dispatched_at: now } : { ...sim, status: 'queued' }
   })
   must(await db().from('call_executions').insert(rows))
   // The calls are saved: a dispatch hiccup must not fail the request (a retry would queue them twice).
@@ -121,13 +124,14 @@ export async function createReplay(replayId: string) {
   const now = new Date().toISOString()
   must(
     await db().from('call_executions').insert(
-      quotes.map((c) => ({ request_id: request.id, shop_id: replayShopId(c.shop.name), kind: 'quote', mode: 'replay', language: c.language ?? callLanguage(c.shop.language, r.request.language), status: 'dispatching', provider_execution_id: `replay-${crypto.randomUUID()}`, dispatched_at: now, script: c.events })),
+      // A call that waited for a line (or was skipped) in the recorded run waits in the queue until its first event.
+      quotes.map((c) => ({ request_id: request.id, shop_id: replayShopId(c.shop.name), kind: 'quote', mode: 'replay', language: c.language ?? callLanguage(c.shop.language, r.request.language), status: c.events[0] && (c.events[0].at > 1000 || c.events[0].payload.status === '__failed') ? 'queued' : 'dispatching', provider_execution_id: `replay-${crypto.randomUUID()}`, dispatched_at: now, script: c.events })),
     ),
   )
   return request.id
 }
 
-const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, language, status, provider_execution_id, provider_status, error, transcript, extracted, duration_seconds, cost_cents, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
+const PUBLIC_COLS = 'id, request_id, shop_id, kind, mode, language, status, provider_execution_id, provider_status, error, transcript, extracted, live_answer, live_answer_at, duration_seconds, cost_cents, dispatched_at, answered_at, ended_at, first_quote_at, created_at, shops(id, name, area, city, language, source)'
 
 // Real calls with real shopkeepers: without the operator token, transcripts, the shopkeeper's quoted words,
 // free-text notes, raw provider errors and Bolna's call id (it unlocks the recording) are withheld. Simulated
@@ -143,7 +147,7 @@ export async function getSearch(id: string, operator = false): Promise<SearchSta
       ...e,
       extracted: x,
       shop: shops,
-      ...(redacted && { transcript: null, provider_execution_id: null, extracted: x && { ...x, notes: null, stock_quote: null }, error: e.error && /^[a-z -]+$/.test(e.error) ? e.error : e.error && 'details hidden' }),
+      ...(redacted && { transcript: null, provider_execution_id: null, extracted: x && { ...x, notes: null, stock_quote: null }, error: e.error && (/^[a-z -]+$/.test(e.error) || notNeeded(e.error)) ? e.error : e.error && 'details hidden' }), // "not needed: already found at <shop>" names a shop on this page
     }
   }) as PublicExecution[]
   return { request, executions, redacted }
@@ -193,7 +197,7 @@ export async function dispatchQueued() {
   if (!inCallingWindow()) return failQueued(`not placed: outside the calling window (${cfg.callWindow} IST)`)
   const claimed = must<Row[]>(await db().rpc('claim_live_calls', { max_active: cfg.maxConcurrency }))
   if (!claimed.length) return
-  const details = must<Row[]>(await db().from('call_executions').select(`id, kind, language, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language)`).in('id', claimed.map((c) => c.id)))
+  const details = must<Row[]>(await db().from('call_executions').select(`id, request_id, kind, language, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language, stop_when_found)`).in('id', claimed.map((c) => c.id)))
   for (const q of details) await dial(q).catch((e) => console.error('dial failed for', q.id, (e as Error).message))
 }
 
@@ -207,6 +211,8 @@ async function dial(q: Row) {
   const shop = q.shops as ShopRow
   const req = q.search_requests as SearchRequest
   if (!callable(shop)) return applyEvent({ id: q.id }, { status: '__failed', error_message: 'not placed: shop is no longer eligible (consent or opt-out)' }, 'dispatch')
+  const found = q.kind === 'quote' && req.stop_when_found && (await foundElsewhere(q.request_id, req.quantity, q.id))
+  if (found) return applyEvent({ id: q.id }, { status: '__failed', error_message: `not needed: already found at ${found}` }, 'dispatch')
   const language = q.language && Object.hasOwn(CALL_LANGS, q.language) ? (q.language as string) : req.language
   const vars = {
     greeting: CALL_LANGS[language].greeting, // the agent's welcome message is {greeting}: AI disclosure and recording notice
@@ -235,6 +241,13 @@ async function dial(q: Row) {
   await logEvent(q.id, 'dispatch', 'queued', { execution_id: pid, kind: q.kind })
 }
 
+// The shop in this search that has already said it has the full quantity and will hold it (in its post-call answer,
+// or heard live), if any. Then queued calls are not needed. A call already in progress is never stopped.
+async function foundElsewhere(requestId: string, quantity: number, exceptId: string): Promise<string | null> {
+  const rows = must<Row[]>(await db().from('call_executions').select('id, extracted, live_answer, shops(name)').eq('request_id', requestId).eq('kind', 'quote').neq('id', exceptId))
+  return rows.find((r) => hasAndHolds(r.extracted ?? r.live_answer, Number(quantity)))?.shops?.name ?? null
+}
+
 // A webhook for a call whose provider id we failed to store: attach it via our own id (from user_data).
 export async function adoptExecution(ourId: string, providerId: string) {
   if (!isUuid(ourId)) return
@@ -253,7 +266,7 @@ async function logEvent(executionId: string, source: Source, status: string | nu
 // trigger in the same write (migration 20261016020000), so they can't be lost between two writes.
 export async function applyEvent(where: { id: string } | { providerId: string }, ev: ProviderEvent, source: Source, payload?: unknown) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const q = db().from('call_executions').select('id, mode, shop_id, provider_execution_id, status, transcript, extracted, duration_seconds, cost_cents, answered_at, ended_at, first_quote_at, version')
+    const q = db().from('call_executions').select('id, mode, shop_id, provider_execution_id, status, transcript, extracted, live_answer, duration_seconds, cost_cents, answered_at, ended_at, first_quote_at, version')
     const cur = must<Row>(await ('id' in where ? q.eq('id', where.id) : q.eq('provider_execution_id', where.providerId)).maybeSingle())
     if (!cur) return null
     const patch = mergeEvent(cur as Execution, ev, new Date().toISOString())
@@ -297,11 +310,32 @@ export async function saveLabel(executionId: string, field: string, isCorrect: b
   must(await db().from('result_labels').upsert({ execution_id: executionId, field, is_correct: isCorrect, correct_value: correctValue?.slice(0, 200) || null }, { onConflict: 'execution_id,field' }))
 }
 
+// SIMULATED calls share SIM_LINES lines. A queued call starts when a line frees, unless a shop has already said it
+// has everything and will hold it (stop_when_found): the same rule dial() applies to LIVE calls.
+async function startSimulated(requestId: string, rows: Row[]) {
+  const queued = rows.filter((r) => r.mode === 'simulated' && r.status === 'queued')
+  let free = SIM_LINES - rows.filter((r) => r.mode === 'simulated' && ACTIVE.includes(r.status)).length
+  if (!queued.length || free <= 0) return
+  const req = must<Row>(await db().from('search_requests').select('quantity, stop_when_found').eq('id', requestId).single())
+  for (const q of queued) {
+    if (free <= 0) return
+    const found = req.stop_when_found && (await foundElsewhere(requestId, req.quantity, q.id))
+    if (found) {
+      await applyEvent({ id: q.id }, { status: '__failed', error_message: `not needed: already found at ${found}` }, 'dispatch')
+      continue
+    }
+    const at = new Date().toISOString()
+    if (must<Row[]>(await db().from('call_executions').update({ status: 'dispatching', dispatched_at: at }).eq('id', q.id).eq('status', 'queued').select('id')).length) Object.assign(q, { status: 'dispatching', dispatched_at: at })
+    free--
+  }
+}
+
 // ---------- the tick: advances one search (client-driven, idempotent, safe to run from several tabs) ----------
 export async function tick(requestId: string) {
   const rows = must<Row[]>(
-    await db().from('call_executions').select('id, mode, status, provider_status, script, script_cursor, dispatched_at, answered_at, ended_at, provider_execution_id, last_polled_at').eq('request_id', requestId),
+    await db().from('call_executions').select('id, mode, status, provider_status, script, script_cursor, dispatched_at, answered_at, ended_at, provider_execution_id, last_polled_at').eq('request_id', requestId).order('created_at').order('id'),
   )
+  await startSimulated(requestId, rows)
   const now = Date.now()
   // Calls are independent, so each one's due steps are delivered in parallel (in order within a call). Each
   // step is claimed by moving the cursor; if delivering it fails, the cursor moves back so it is retried.

@@ -1,4 +1,5 @@
 import { stockOf } from './rank'
+import { notNeeded } from './state'
 import type { CallKind, CallStatus, Extraction } from './types'
 
 export type MetricRow = {
@@ -49,7 +50,7 @@ function groupCount<T>(xs: T[], key: (x: T) => string) {
 // all spend (reservation calls too) per search in which a shop confirmed the full quantity.
 export function computeMetrics(all: MetricRow[]) {
   const rows = all.filter((r) => r.kind === 'quote')
-  const calls = rows.filter((r) => r.dispatched_at)
+  const calls = rows.filter((r) => r.dispatched_at && !notNeeded(r.error)) // a call skipped once the item was found was never dialled
   const answered = calls.filter((r) => r.answered_at || r.status === 'done')
   const failed = calls.filter((r) => r.status === 'failed' || r.status === 'timeout')
   const firstQuote = calls.filter((r) => r.first_quote_at).map((r) => (Date.parse(r.first_quote_at!) - Date.parse(r.dispatched_at!)) / 1000)

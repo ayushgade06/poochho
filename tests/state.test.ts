@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { mergeEvent } from '@/lib/state'
 import type { Execution } from '@/lib/types'
 
-type S = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at'>
-const fresh = (o: Partial<S> = {}): S => ({ status: 'dispatching', transcript: null, extracted: null, duration_seconds: null, cost_cents: null, answered_at: null, ended_at: null, first_quote_at: null, ...o })
+type S = Pick<Execution, 'status' | 'transcript' | 'extracted' | 'duration_seconds' | 'cost_cents' | 'answered_at' | 'ended_at' | 'first_quote_at' | 'live_answer'>
+const fresh = (o: Partial<S> = {}): S => ({ status: 'dispatching', transcript: null, extracted: null, duration_seconds: null, cost_cents: null, answered_at: null, ended_at: null, first_quote_at: null, live_answer: null, ...o })
 const T = '2026-10-16T10:00:00.000Z'
 const apply = (s: S, ev: Parameters<typeof mergeEvent>[1]) => ({ ...s, ...(mergeEvent(s, ev, T) ?? {}) }) as S
 const quote = { in_stock: 'yes', unit_price_inr: 270, confidence: 'high' }
@@ -80,6 +80,23 @@ describe('mergeEvent', () => {
     s = apply(s, { status: 'completed', cost: 9, extracted_data: quote })
     expect(s.cost_cents).toBe(9)
     expect(mergeEvent(s, { status: 'call-disconnected', cost: 0 }, T)).toBeNull()
+  })
+
+  it('takes answers heard mid-call: ringing moves to talking, reports add up, the final extraction replaces them', () => {
+    let s = apply(fresh({ status: 'ringing' }), { status: '__live', live: { in_stock: 'yes' } })
+    expect(s).toMatchObject({ status: 'talking', answered_at: T, live_answer: { in_stock: 'yes' } })
+    s = apply(s, { status: '__live', live: { price_inr: 540, can_hold: 'yes' } }) // a second report adds, never erases
+    expect(s.live_answer).toEqual({ in_stock: 'yes', price_inr: 540, can_hold: 'yes' })
+    expect(mergeEvent(s, { status: '__live', live: { in_stock: 'yes', price_inr: 540 } }, T)).toBeNull() // duplicate
+    s = apply(s, { status: 'completed', extracted_data: quote })
+    expect(mergeEvent(s, { status: '__live', live: { in_stock: 'no' } }, T)).toBeNull() // too late: the final answer stands
+  })
+
+  it('never lets a live answer move a call backwards', () => {
+    const s = apply(fresh({ status: 'processing' }), { status: '__live', live: { can_hold: 'yes' } })
+    expect(s.status).toBe('processing') // the call already ended; the answer is still kept until extraction
+    expect(s.live_answer).toEqual({ can_hold: 'yes' })
+    expect(mergeEvent(fresh({ status: 'failed' }), { status: '__live', live: { in_stock: 'yes' } }, T)).toBeNull()
   })
 
   it('ignores unknown provider statuses but still merges data', () => {

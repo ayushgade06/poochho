@@ -139,12 +139,77 @@ by the developer and **needs a native speaker's review**. Both prompts have an F
 (added 2026-10-16): the agent explains, and ends the call politely if the shopkeeper objects. Don't set it through the API: on a multilingual agent the API's
 `agent_prompts` is not what calls use, and every dashboard save rewrites it. Have a native speaker review the Hindi.
 
-## 6. Trial-account limits
+## 6. Tool: report_availability (answers mid-call). Connect after deployment
+
+The agent reports what it heard while the shopkeeper is still on the line, so the card fills in during the call. It
+needs the public URL, so it waits for the Vercel deployment; everything else is built and tested with mocked tool
+requests (`tests/tool.test.ts`, `tests/integration/live-mocked.test.ts`).
+
+What Bolna does (its docs, read 2026-10-16, plus notes from its open-source engine): a POST custom function sends
+`param` as a JSON body with every `%(x)s` value as a **string** ("True", "None", "540.0"); a parameter named
+`execution_id` gets Bolna's call id; prompt variables such as `poochho_execution_id` (sent in `user_data`) are filled
+in automatically; Bolna waits about 10 seconds for the reply, follows no redirects and refuses private IPs, so use
+the exact final `https://` URL; `PATCH /v2/agent` can't add tools, so add it in **Agent → Tools**;
+`tool_call_logs` in API responses stays empty, so Poochho logs every tool call itself (`call_events`, source `tool`).
+
+**Agent → Tools → add custom function** (replace the two placeholders):
+
+```json
+{
+  "name": "report_availability",
+  "description": "Call this right after the shopkeeper says whether they have the item, and again once they have said the price and whether they can keep it aside. Report only what the shopkeeper actually said; leave out anything they did not say.",
+  "pre_call_message": "जी, ठीक है.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "execution_id": { "type": "string", "description": "Filled in automatically. Leave empty." },
+      "poochho_execution_id": { "type": "string", "description": "Filled in automatically. Leave empty." },
+      "in_stock": { "type": "string", "enum": ["yes", "partial", "no", "unsure"], "description": "Does the shop have {item} in the full quantity {quantity}? partial = only less, or only with a condition." },
+      "qty_available": { "type": "number", "description": "How many units the shopkeeper said they have, only if they said a number." },
+      "price_inr": { "type": "number", "description": "The TOTAL price in rupees the shopkeeper said for the whole quantity {quantity}. Leave out if they only gave a per-unit price or no price." },
+      "ready_in_minutes": { "type": "number", "description": "Minutes until it is ready for pickup; 0 if ready now. Leave out if vague." },
+      "can_hold": { "type": "string", "enum": ["yes", "no", "unknown"], "description": "Did the shopkeeper agree to keep it aside for the customer?" }
+    },
+    "required": ["in_stock"]
+  },
+  "key": "custom_task",
+  "value": {
+    "method": "POST",
+    "param": {
+      "execution_id": "%(execution_id)s",
+      "poochho_execution_id": "%(poochho_execution_id)s",
+      "in_stock": "%(in_stock)s",
+      "qty_available": "%(qty_available)s",
+      "price_inr": "%(price_inr)s",
+      "ready_in_minutes": "%(ready_in_minutes)s",
+      "can_hold": "%(can_hold)s"
+    },
+    "url": "https://<deployment>/api/bolna/tool",
+    "api_token": "",
+    "headers": { "Content-Type": "application/json", "x-poochho-secret": "<BOLNA_WEBHOOK_SECRET>" }
+  }
+}
+```
+
+**Then add to the prompt** (`data/bolna-prompt.md` and `data/bolna-prompt-mr.md`, all three tabs; Guardrails):
+
+```
+- After the shopkeeper answers Section 3 [AVAILABILITY CHECK], Question 1, call report_availability with in_stock (and qty_available if they said a number). After they have given the price and answered whether they can hold it, call report_availability again with everything they said. Never mention this function or its result to the shopkeeper, never wait for it to speak, and continue the conversation normally.
+```
+
+`/api/bolna/tool` answers `{"ok":true}` and nothing else: the reply is read back to the model, so it never carries
+other shops' data (the prompt also forbids discussing competitors). It uses the same `x-poochho-secret` header and
+optional `BOLNA_WEBHOOK_IPS` allowlist as the webhook. A report is provisional ("heard live" on the card) and the
+post-call extraction always replaces it. Test it after deploying: `curl -X POST https://<deployment>/api/bolna/tool
+-H 'x-poochho-secret: …' -H 'content-type: application/json' -d '{"execution_id":"test","in_stock":"yes"}'` should
+answer 202 (unknown call).
+
+## 7. Trial-account limits
 
 Trial accounts can call **verified numbers only** (User Profile → Verified Numbers) and allow **2 concurrent calls**.
 On a trial account, set `MAX_CONCURRENCY=2`. Calls beyond the limit are queued by Bolna, not rejected.
 
-## 7. Turning on LIVE mode
+## 8. Turning on LIVE mode
 
 1. Put consenting test numbers in `data/shops.local.json` (copy the `.example`; it is gitignored), each with a
    `consent_note` and `consent_verified_at`, then run `npm run seed:shops`.

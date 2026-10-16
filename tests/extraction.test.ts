@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUsableQuote, parseExtraction, quoteHeard } from '@/lib/extraction'
+import { isUsableQuote, parseExtraction, parseLive, quoteHeard } from '@/lib/extraction'
 
 describe('parseExtraction', () => {
   it('accepts objects, JSON strings, { value } wrappers and one level of grouping', () => {
@@ -87,6 +87,18 @@ describe('quoteHeard: a quote is shown only if the shopkeeper really said it', (
 
   it('compares composed and decomposed Unicode alike', () => {
     expect(quoteHeard('Café'.normalize('NFD'), 'user: café ready'.normalize('NFC'))).toBe(true)
+  })
+})
+
+describe('parseLive: the agent\'s mid-call report, as Bolna substitutes it (strings)', () => {
+  it('reads string values and keeps only what was said', () => {
+    expect(parseLive({ execution_id: 'x', in_stock: 'yes', qty_available: 'None', price_inr: '540.0', ready_in_minutes: '10', can_hold: 'True' })).toEqual({ in_stock: 'yes', price_inr: 540, ready_in_minutes: 10, can_hold: 'yes' })
+    expect(parseLive({ in_stock: 'False', can_hold: 'unknown', price_inr: '' })).toEqual({ in_stock: 'no' })
+    expect(parseLive({ in_stock: 'partial', qty_available: '1' })).toEqual({ in_stock: 'partial', qty_available: 1 })
+  })
+
+  it('returns null when nothing usable was reported', () => {
+    for (const v of [null, 'yes', [], {}, { in_stock: 'maybe', price_inr: '500-600', can_hold: 'None' }, { in_stock: 'constructor' }]) expect(parseLive(v)).toBeNull()
   })
 })
 

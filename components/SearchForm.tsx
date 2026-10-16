@@ -31,6 +31,7 @@ export default function SearchForm() {
   const [replayId, setReplayId] = useState('')
   const [op, setOp] = useState(() => token.get())
   const [consent, setConsent] = useState(false)
+  const [stopWhenFound, setStopWhenFound] = useState(true)
   const [busy, setBusy] = useState(false)
   const [fail, setFail] = useState<string | null>(null)
   const [heard, setHeard] = useState<{ text: string; filled: string[]; lang?: VoiceLang | null } | null>(null)
@@ -80,7 +81,7 @@ export default function SearchForm() {
     const body =
       mode === 'replay'
         ? { mode, replay_id: replayId }
-        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null, asked_in: heard?.lang ?? null }
+        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null, asked_in: heard?.lang ?? null, stop_when_found: stopWhenFound }
     if (mode === 'live') token.set(op)
     try {
       const r = await fetch('/api/searches', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(mode === 'live' ? { 'x-admin-token': op } : {}) }, body: JSON.stringify(body) })
@@ -288,8 +289,14 @@ export default function SearchForm() {
           </ul>
         )}
       </fieldset>
+      <label className="flex items-start gap-3 rounded-xl border border-line bg-white p-3">
+        <input type="checkbox" className="mt-1 size-4 accent-ink" checked={stopWhenFound} onChange={(e) => setStopWhenFound(e.target.checked)} />
+        <span>
+          Stop calling once a shop confirms it has all of it and will hold it <span className="text-muted">— saves shopkeepers&apos; time and credits</span>
+        </span>
+      </label>
       <p className="text-sm text-muted">
-        All selected shops are called at the same time. Each call takes about 45 seconds. The assistant says it is an AI first, asks about stock, price and holding, and never shares your
+        All selected shops are called at the same time, as many as there are free lines. Each call takes about 45 seconds. The assistant says it is an AI first, asks about stock, price and holding, and never shares your
         number. Failed calls are not retried automatically.
       </p>
       {mode === 'live' && (

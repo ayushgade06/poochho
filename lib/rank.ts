@@ -1,4 +1,5 @@
-import type { CallStatus, Extraction, SearchRequest } from './types'
+import { notNeeded } from './state'
+import type { CallStatus, Extraction, LiveAnswer, SearchRequest } from './types'
 
 // Score (0–100) = (stock + readiness + hold + price points) × confidence multiplier. See README "Ranking".
 // Availability leads: packaged goods and medicines carry a printed MRP, so prices barely differ between shops.
@@ -24,6 +25,7 @@ export type Ranked = {
   flags: string[]
   explanation: string
   winner: boolean
+  skipped: boolean // never dialled: another shop already had everything (stop_when_found)
 }
 
 const UNIT_ALIASES: Record<string, string> = {
@@ -45,13 +47,16 @@ export const qtyLabel = (q: number, unit: string) => `${q} ${q === 1 ? unit : (P
 
 const positive = (n: number | null | undefined) => (n != null && n > 0 ? n : null)
 
-// Whether a shop's answer covers the requested quantity.
-export function stockOf(x: Extraction | null, quantity: number): Ranked['stock'] {
+// Whether a shop's answer (final, or heard live) covers the requested quantity.
+export function stockOf(x: Pick<LiveAnswer, 'in_stock' | 'qty_available'> | null, quantity: number): Ranked['stock'] {
   if (!x) return 'unknown'
   if (x.in_stock === 'no') return 'none'
-  if (x.in_stock === 'partial' || (x.in_stock === 'yes' && x.qty_available !== null && x.qty_available < quantity)) return 'short'
+  if (x.in_stock === 'partial' || (x.in_stock === 'yes' && x.qty_available != null && x.qty_available < quantity)) return 'short'
   return x.in_stock === 'yes' ? 'full' : 'unknown'
 }
+
+// Has all of it and will keep it aside: once one shop says so, the search needs no more calls.
+export const hasAndHolds = (x: Pick<LiveAnswer, 'in_stock' | 'qty_available' | 'can_hold'> | null, quantity: number) => stockOf(x, quantity) === 'full' && x!.can_hold === 'yes'
 
 export function rankResults(req: Req, rows: Input[]): Ranked[] {
   const q = req.quantity
@@ -77,8 +82,14 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     const flags: string[] = []
     const factors = { stock: 0, price: 0, ready: 0, hold: 0, confidence: 0 }
     if (!x) {
-      flags.push(r.status === 'done' ? 'No usable answer extracted' : r.status === 'failed' || r.status === 'timeout' ? `Call ${r.status === 'timeout' ? 'timed out' : 'failed'}${r.error ? `: ${r.error}` : ''}` : 'Call in progress')
-      return { id: r.id, shopName: r.shopName, status: r.status, ready: null, stock, unit, total, comparable, factors, score: 0, eligible: false, flags, explanation: flags[0], winner: false }
+      const skipped = r.status === 'failed' && notNeeded(r.error)
+      flags.push(
+        skipped ? `Not called: ${r.error!.slice('not needed: '.length)}`
+        : r.status === 'done' ? 'No usable answer extracted'
+        : r.status === 'failed' || r.status === 'timeout' ? `Call ${r.status === 'timeout' ? 'timed out' : 'failed'}${r.error ? `: ${r.error}` : ''}`
+        : 'Call in progress',
+      )
+      return { id: r.id, shopName: r.shopName, status: r.status, ready: null, stock, unit, total, comparable, factors, score: 0, eligible: false, flags, explanation: flags[0], winner: false, skipped }
     }
     const has = stock === 'full' || stock === 'short' // price, readiness and hold only count for stock that exists
     factors.stock = stock === 'full' ? WEIGHTS.stock : stock === 'short' ? Math.round(WEIGHTS.stock * 0.4 * (x.qty_available !== null ? Math.min(1, x.qty_available / q) : 0.5)) : 0
@@ -119,7 +130,7 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     }
     const ready = stock === 'none' ? null : x.ready_in_minutes
     const eligible = stock === 'full' && !overBudget && !late && !budgetUnknown && !readyUnknown
-    return { id: r.id, shopName: r.shopName, status: r.status, ready, stock, unit, total, comparable, factors, score, eligible, flags, explanation: parts.join(' · '), winner: false }
+    return { id: r.id, shopName: r.shopName, status: r.status, ready, stock, unit, total, comparable, factors, score, eligible, flags, explanation: parts.join(' · '), winner: false, skipped: false }
   })
 
   ranked.sort(

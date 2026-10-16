@@ -24,6 +24,13 @@ you review every field before anything is called. Afterwards, hear the summary i
 Tamil, Telugu, Kannada, Malayalam, Gujarati, Punjabi or Odia: Sarvam Translate plus Bulbul, labelled
 machine-translated.
 
+**Answers appear mid-call, and calling stops once it's found.** The agent reports what the shopkeeper said
+through a Bolna tool call (`report_availability` → `POST /api/bolna/tool`), so a card fills in ("heard live") while
+the shopkeeper is still talking; the post-call extraction then replaces it. Calls run as many at a time as there are
+lines, and once a shop confirms it has everything and will hold it, the shops still waiting are not called
+("Not called · already found at …"). That saves shopkeepers' time and credits; a call already in progress is never
+cut. It's on by default and can be turned off on the review step.
+
 **Each shop is called in its own language.** The agent speaks Hindi, English and Marathi (Marathi on Sarvam's
 `saaras:v4` and `bulbul:v4-flash`); a shop is called in its language when the agent speaks it, otherwise in the
 request's. So: you ask in Tamil → a Pune shop is called in Marathi → you hear the answer in Tamil. The results page
@@ -70,6 +77,10 @@ flowchart LR
   call's language is decided once, when the search is created, stored on the call, and sent as
   `agent_data.language`. Bolna refuses a language the agent isn't configured for; `npm run bolna -- check` compares
   the two lists.
+- **Stop once found.** Right before dialling a queued call, `dial()` checks whether another call in the same search
+  already has the full quantity and a "yes" to holding it, from its final extraction or from an answer heard live
+  (`hasAndHolds` in `lib/rank.ts`). SIMULATED calls run 3 at a time (`SIM_LINES`, like a real account's concurrency
+  limit) and apply the same check when a line frees.
 - **No double dialling.** `claim_live_calls()` (SQL, advisory lock) claims queued calls atomically and never
   exceeds `MAX_CONCURRENCY` in flight; recent timeouts still count as in flight. Calls left queued for more than
   10 minutes expire rather than dial late.
@@ -136,7 +147,7 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 
 ## Database
 
-Five migrations in `supabase/migrations/`:
+Six migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
@@ -145,6 +156,8 @@ Five migrations in `supabase/migrations/`:
 - **`20261016030000_call_cost.sql`**: `call_executions.cost_cents`, what Bolna charged per call in US cents.
 - **`20261016040000_call_language.sql`**: `call_executions.language` (what each call was placed in) and
   `search_requests.asked_in` (the language the user spoke the request in).
+- **`20261017000000_live_answers.sql`**: `call_executions.live_answer` / `live_answer_at` (heard mid-call),
+  `search_requests.stop_when_found`, and `tool` as a `call_events` source.
 
 Tables:
 
@@ -215,8 +228,8 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 73 unit tests (validation, extraction and the quote check, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook and recording routes with mocked dependencies) |
-| `npm run test:integration` | 17 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
+| `npm test` | 84 unit tests (validation, extraction and the quote check, mid-call reports, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook, tool and recording routes with mocked dependencies) |
+| `npm run test:integration` | 19 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Simulated lines, answers heard mid-call and skipped calls. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, stop once found, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |
@@ -228,7 +241,8 @@ Rules:
 1. Import the GitHub repo into Vercel. Set the environment variables (secrets as encrypted variables, never
    `NEXT_PUBLIC_`).
 2. `vercel.json` pins functions to `icn1` (Seoul), next to the Supabase database (ap-northeast-2).
-3. Set the Bolna webhook to `https://<deployment>/api/bolna/webhook` with the `x-poochho-secret` header.
+3. Set the Bolna webhook to `https://<deployment>/api/bolna/webhook` with the `x-poochho-secret` header, and add
+   the `report_availability` tool pointing at `https://<deployment>/api/bolna/tool` (docs/bolna-setup.md §6).
 4. Keep `LIVE_CALLS_ENABLED=false` on any public deployment unless you are running a supervised live test.
 
 ## Troubleshooting

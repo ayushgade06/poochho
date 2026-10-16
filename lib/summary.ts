@@ -1,4 +1,5 @@
 import { qtyLabel, rankResults, type Ranked } from './rank'
+import { notNeeded } from './state'
 import { CALL_LANGS, type Lang, type PublicExecution, type SearchRequest, type SearchState } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
@@ -16,10 +17,11 @@ const money = (n: number) => String(Math.round(n * 100) / 100)
 // Spoken/visible summary in the user's language. Every number comes from a verified, extracted answer.
 // Availability first (has it, how soon, can they keep it), then the price.
 export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = null) {
-  const called = ranked.length
+  const skipped = ranked.filter((r) => r.skipped).length // not dialled: a shop already had it all and will hold it
+  const called = ranked.length - skipped
   const answered = ranked.filter((r) => r.status === 'done').length
   const have = ranked.filter((r) => r.stock === 'full' || r.stock === 'short').length
-  const unanswered = ranked.filter((r) => r.status === 'failed' || r.status === 'timeout').length
+  const unanswered = ranked.filter((r) => (r.status === 'failed' || r.status === 'timeout') && !r.skipped).length
   const w = ranked.find((r) => r.winner)
   const ready = (n: number | null, hi: boolean) => (n === null ? '' : n === 0 ? (hi ? ', अभी तैयार' : ', ready now') : hi ? `, लगभग ${n} मिनट में तैयार` : `, ready in about ${n} minutes`)
   const canHold = w && w.factors.hold > 0 && !hold // once a hold call exists, its outcome is reported instead
@@ -30,6 +32,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
     if (w) out.push(`सबसे अच्छा विकल्प: ${w.shopName}, उनके पास पूरे ${qty} हैं${ready(w.ready, true)}${canHold ? ', और वे इसे आपके लिए रख सकते हैं' : ''}। ${w.total !== null ? `कुल कीमत ${money(w.total)} रुपये।` : 'कीमत नहीं बताई।'}`)
     else out.push(`किसी भी दुकान ने पूरे ${qty} की पुष्टि नहीं की।`)
     if (unanswered) out.push(`${unanswered} ${unanswered === 1 ? 'दुकान' : 'दुकानों'} से बात नहीं हो पाई।`)
+    if (skipped) out.push(`सामान मिल गया था, इसलिए ${skipped} और ${skipped === 1 ? 'दुकान' : 'दुकानों'} को call नहीं किया।`)
     if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} ने आपके लिए सामान रखने की पुष्टि की है।`)
     if (hold?.outcome === 'declined') out.push(`${hold.shopName} ने सामान रखने से मना किया।`)
     return out.join(' ')
@@ -39,6 +42,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   if (w) out.push(`Best option: ${w.shopName} has all ${qty}${ready(w.ready, false)}${canHold ? ', and says it can keep it for you' : ''}. ${w.total !== null ? `Price: ${money(w.total)} rupees in total.` : 'Price not quoted.'}`)
   else out.push(`No shop confirmed all ${qty}.`)
   if (unanswered) out.push(`${unanswered} shop${unanswered === 1 ? '' : 's'} could not be reached.`)
+  if (skipped) out.push(`It was already found, so ${skipped} more shop${skipped === 1 ? ' was' : 's were'} not called.`)
   if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} confirmed they will keep it for you.`)
   if (hold?.outcome === 'declined') out.push(`${hold.shopName} declined to hold it.`)
   return out.join(' ')
@@ -76,9 +80,9 @@ export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, res
 }
 
 // Parallel calling vs ringing the same shops one after another: the measured wall-clock time of the whole search
-// against the sum of each call's own dial-to-end time. Null until every quote call has ended.
-export function timeSaved(calls: Pick<PublicExecution, 'kind' | 'dispatched_at' | 'ended_at'>[]) {
-  const q = calls.filter((c) => c.kind === 'quote')
+// against the sum of each call's own dial-to-end time. Null until every quote call that was dialled has ended.
+export function timeSaved(calls: Pick<PublicExecution, 'kind' | 'dispatched_at' | 'ended_at' | 'error'>[]) {
+  const q = calls.filter((c) => c.kind === 'quote' && !notNeeded(c.error))
   if (!q.length || q.some((c) => !c.dispatched_at || !c.ended_at)) return null
   const start = q.map((c) => Date.parse(c.dispatched_at!))
   const end = q.map((c) => Date.parse(c.ended_at!))

@@ -17,7 +17,7 @@ const must = ({ data, error }) => {
 }
 const req = must(await db.from('search_requests').select('*').eq('id', id).single())
 if (req.mode === 'replay') throw new Error('That search is itself a replay.')
-const calls = must(await db.from('call_executions').select('id, kind, language, status, dispatched_at, shops(name, area, language)').eq('request_id', id).order('created_at'))
+const calls = must(await db.from('call_executions').select('id, kind, language, status, dispatched_at, created_at, shops(name, area, language)').eq('request_id', id).order('created_at'))
 // Masks long digit runs (phone numbers) in every string, at any depth. For real calls, free-text notes are
 // dropped entirely: they can hold anything the shopkeeper said.
 const mask = (v) =>
@@ -26,11 +26,14 @@ const mask = (v) =>
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !(req.mode === 'live' && /^notes$/i.test(k))).map(([k, x]) => [k, mask(x)]))
   : v
 
+// Quote calls share one clock from the start of the search, so a call that waited for a free line (or was
+// skipped) keeps its delay; each hold call is timed from its own click.
+const searchStart = Math.min(...calls.filter((c) => c.kind === 'quote').map((c) => Date.parse(c.created_at)))
 const out = []
 for (const c of calls) {
-  if (!c.dispatched_at) continue
   const events = must(await db.from('call_events').select('provider_status, payload, received_at').eq('execution_id', c.id).order('received_at'))
-  const t0 = Date.parse(c.dispatched_at)
+  if (!events.length) continue
+  const t0 = c.kind === 'quote' ? searchStart : Date.parse(c.dispatched_at ?? c.created_at)
   out.push({
     shop: c.shops,
     kind: c.kind,
@@ -46,6 +49,7 @@ for (const c of calls) {
           ...(e.payload.extracted_data && { extracted_data: mask(e.payload.extracted_data) }),
           ...(e.payload.conversation_duration != null && { conversation_duration: e.payload.conversation_duration }),
           ...(e.payload.total_cost != null && { total_cost: e.payload.total_cost }), // US cents, so a replay of a real run shows its cost
+          ...(e.payload.tool_call && { tool_call: e.payload.tool_call }), // an answer heard mid-call
           ...(e.payload.error_message && { error_message: mask(e.payload.error_message) }),
           ...(e.payload.answered_by_voice_mail && { answered_by_voice_mail: true }),
         },

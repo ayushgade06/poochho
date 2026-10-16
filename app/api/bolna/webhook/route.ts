@@ -1,23 +1,14 @@
 import { toEvent } from '@/lib/bolna'
-import { safeEqual } from '@/lib/config'
+import { bolnaDenied } from '@/lib/config'
 import { adoptExecution, applyEvent } from '@/lib/engine'
 
-// Bolna POSTs the full execution object on every status change (several deliveries per call, same `id`).
-// Bolna does not sign webhooks; its documented trust mechanisms are custom headers and source IPs, so we
-// require a shared secret header (set under Agent → Extractions → Webhook → Add headers) and optionally an
-// IP allowlist. The secret is accepted only as a header, never in the URL (URLs end up in logs).
+// Bolna POSTs the full execution object on every status change (several deliveries per call, same `id`),
+// with the shared-secret header set under Agent → Extractions → Webhook → Add headers (see bolnaDenied).
 // Responses: 200 applied or duplicate, 202 unknown call (no retry wanted), 400 malformed, 401/403 rejected,
 // 503 transient failure (Bolna retries non-2xx).
 export async function POST(req: Request) {
-  const secret = process.env.BOLNA_WEBHOOK_SECRET
-  const given = req.headers.get('x-poochho-secret')
-  if (!secret || !given || !safeEqual(given, secret)) return Response.json({ error: 'unauthorized' }, { status: 401 })
-
-  const allow = (process.env.BOLNA_WEBHOOK_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  if (allow.length) {
-    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0].trim() || req.headers.get('x-real-ip') || ''
-    if (!allow.includes(ip)) return Response.json({ error: 'forbidden' }, { status: 403 })
-  }
+  const denied = bolnaDenied(req)
+  if (denied) return denied
 
   const body = await req.json().catch(() => null)
   const ev = toEvent(body)

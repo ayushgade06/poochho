@@ -9,7 +9,8 @@
   too. The agent problems it revealed are fixed in the prompt and settings (§6a); a second live call should confirm them.
 - Buildathon milestones (§9): **M1 done** (availability first; the shopkeeper's own words, freshness, recordings and
   cost behind every answer). **M3 done** apart from a real Marathi call (each shop called in its own language; the
-  agent now speaks Marathi). **M2 waits for the Kaggle dataset.**
+  agent now speaks Marathi). **M4 done locally** (answers mid-call, stop once found); the Bolna tool gets connected
+after deployment. **M2 waits for the Kaggle dataset.**
 
 ## 1. Features implemented
 
@@ -64,8 +65,8 @@ the excess is UI and safety checks, which I kept rather than cut.
 
 | Command | Result |
 |---|---|
-| `npm test` (Vitest, 11 files) | **73 passed** (after M3) |
-| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **17 passed** (after M3) |
+| `npm test` (Vitest, 12 files) | **84 passed** (after M4) |
+| `npm run test:integration` (real Supabase; Bolna mocked in one file) | **19 passed** (after M4) |
 | `npm run typecheck` | 0 errors |
 | `npm run lint` | 0 problems |
 | `npm run build` | **Succeeds** (Next.js 16.4.1, Turbopack): `/` static; API routes dynamic; `/metrics` and `/search/[id]` partial prerender |
@@ -257,3 +258,16 @@ Goal: you ask in Tamil → a Pune shop is called in Marathi → you hear the ans
 **Needs a native speaker's review:** the Marathi prompt, the Marathi greeting and the Marathi simulated lines
 (also the Hindi ones, as before). **A real Marathi call waits for you.** Tamil gets added only once Marathi works end
 to end.
+
+### M4: answers appear mid-call, and calling stops once found (2026-10-17, done locally; tool connects after deploy)
+
+| Change | Where | How it was verified |
+|---|---|---|
+| `POST /api/bolna/tool` for the agent's `report_availability` tool: the same shared-secret header and optional IP allowlist as the webhook (now one function, `bolnaDenied`); values parsed defensively (Bolna turns everything into strings: "True", "None", "540.0"); matched by Bolna's `execution_id`, falling back to our id (adopting the call if needed); answers `{"ok":true}` only, never other shops' data | `app/api/bolna/tool/route.ts`, `lib/config.ts`, `lib/extraction.ts` (`parseLive`) | `tests/tool.test.ts`: auth, IP allowlist, string parsing, unknown call → 202, stale or repeated reports → 200 unchanged, nothing usable → 400 |
+| A provisional "heard live" answer in the normalised event (`ProviderEvent.live`, synthetic status `__live` → talking). `mergeEvent` merges reports field by field into `live_answer` until the post-call extraction exists, which replaces it; it can move ringing → talking but never backwards | `lib/state.ts`, migration `20261017000000_live_answers.sql` (applied and checked; `tool` added to the `call_events` source check) | State unit tests; integration test logs a real `tool` event |
+| Stop calling once found (`search_requests.stop_when_found`, default on; a checkbox on the review step). Right before dialling a queued call, `dial()` checks whether another call in the search already has the full quantity and a "yes" to holding it, from its final extraction or a live answer, and marks the call `not needed: already found at <shop>` instead. A call in progress is never stopped. Skipped calls count as not dialled in the summary ("2 more shops were not called"), the time-saved strip and `/metrics` | `lib/engine.ts` (`foundElsewhere`, `dial`), `lib/rank.ts` (`hasAndHolds`, `skipped`), `lib/summary.ts`, `lib/metrics.ts`, `components/*` | Integration test with mocked Bolna: a live answer on one call makes the queued third call skip without dialling, while the first call keeps talking |
+| SIMULATED: calls run 3 at a time (`SIM_LINES`, like a real account's concurrency limit) and queued ones start as lines free, with the same stop-once-found check. Scripted calls send two `__live` reports mid-call through the same merge path. Replays keep both: the export now includes skipped calls and tool reports, and the sample replay was re-recorded | `lib/sim.ts`, `lib/engine.ts` (`startSimulated`), `scripts/export-replay.mjs` | Integration test on the real database; browser (production build): cards show "Heard live · provisional" mid-call, then "Not called · Not needed: already found at Sharma Kirana Store" for the two queued shops; summary "सामान मिल गया था, इसलिए 2 और दुकानों को call नहीं किया।"; 390 px |
+
+**Waits for deployment:** adding the custom function in Agent → Tools and the two prompt lines that tell the agent
+to call it (exact JSON and text in `docs/bolna-setup.md` §6). Until then LIVE calls still stop once found, using
+the final answers.

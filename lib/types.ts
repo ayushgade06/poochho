@@ -45,6 +45,10 @@ export type Extraction = {
   stock_quote: string | null // the shopkeeper's own words about availability; shown only if found in the transcript
 }
 
+// What the agent reported mid-call through its report_availability tool: provisional, and only what was said.
+// The post-call extraction replaces it.
+export type LiveAnswer = Partial<Pick<Extraction, 'in_stock' | 'qty_available' | 'ready_in_minutes' | 'can_hold'> & { price_inr: number }>
+
 export type SearchRequest = {
   id: string
   mode: Mode
@@ -60,6 +64,7 @@ export type SearchRequest = {
   need_within_minutes: number | null
   constraints: string | null
   asked_in: VoiceLang | null // the language the user spoke the request in, if they spoke it (Sarvam-detected)
+  stop_when_found: boolean // stop dialling once a shop confirms it has everything and will hold it
   replay_of: string | null
   created_at: string
 }
@@ -82,6 +87,7 @@ export type ProviderEvent = {
   error_message?: string | null
   answered_by_voice_mail?: boolean | null
   cost?: number | null // US cents (Bolna total_cost)
+  live?: LiveAnswer | null // heard mid-call (tool call); merged until the post-call extraction exists
 }
 // SIMULATED/REPLAY step: a Bolna-shaped execution payload delivered `at` ms after dispatch.
 export type ScriptEvent = { at: number; payload: Record<string, unknown> }
@@ -100,6 +106,8 @@ export type Execution = {
   transcript: string | null
   extracted: Extraction | null
   raw_extracted: unknown
+  live_answer: LiveAnswer | null
+  live_answer_at: string | null
   duration_seconds: number | null
   cost_cents: number | null // what Bolna charged, in US cents
   script: ScriptEvent[] | null

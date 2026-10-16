@@ -156,7 +156,7 @@ describe('call language (mocked Bolna)', () => {
     const now = new Date().toISOString()
     await db().from('shops').upsert(LANG_SHOPS.map((s, i) => ({ ...s, name: `Mock ${s.language} shop`, area: 'Test', source: 'live', phone: `+91000000002${i}`, consent_status: 'verified', consent_verified_at: now, opted_out_at: null })))
     const before = started.length
-    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: 'ta-IN', shop_ids: LANG_SHOPS.map((s) => s.id) })
+    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: 'ta-IN', stop_when_found: true, shop_ids: LANG_SHOPS.map((s) => s.id) })
     const calls = started.slice(before).map((c) => ({ to: c.to, lang: (c.body.agent_data as { language: string }).language, greeting: (c.body.user_data as Record<string, string>).greeting }))
     expect(calls).toHaveLength(2)
     expect(calls.find((c) => c.to.endsWith('20'))).toEqual({ to: '+910000000020', lang: 'mr', greeting: CALL_LANGS.mr.greeting })
@@ -164,5 +164,37 @@ describe('call language (mocked Bolna)', () => {
     const s = (await getSearch(searchId, true))!
     expect(s.request.asked_in).toBe('ta-IN')
     expect(s.executions.map((e) => [e.shop_id, e.language]).sort()).toEqual([['zz-mock-marathi', 'mr'], ['zz-mock-tamil', 'hi']])
+  })
+})
+
+describe('stop calling once found (mocked Bolna)', () => {
+  const FOUND = ['zz-mock-found-1', 'zz-mock-found-2', 'zz-mock-found-3']
+  let searchId = ''
+  afterAll(async () => {
+    if (searchId) await db().from('search_requests').delete().eq('id', searchId)
+    await db().from('shops').delete().in('id', FOUND)
+  })
+
+  it('skips a queued call once a shop says, live, it has it all and will hold it, and never stops a call in progress', async () => {
+    await db().from('call_executions').update({ status: 'done' }).like('shop_id', 'zz-mock%').in('status', ['dispatching', 'ringing', 'talking']) // free the lines (test shops only)
+    const now = new Date().toISOString()
+    await db().from('shops').upsert(FOUND.map((id, i) => ({ id, name: `Found Shop ${i + 1}`, area: 'Test', source: 'live', phone: `+91000000003${i}`, consent_status: 'verified', consent_verified_at: now, opted_out_at: null })))
+    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 2, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, shop_ids: FOUND })
+    let s = (await getSearch(searchId, true))!
+    const [first, second] = s.executions.filter((e) => e.status === 'dispatching')
+    expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(1) // two lines on this account
+    // The first shop says mid-call (the agent's tool) that it has both strips and will hold them.
+    expect(await applyEvent({ providerId: first.provider_execution_id! }, { status: '__live', live: { in_stock: 'yes', can_hold: 'yes' } }, 'tool')).toEqual({ id: first.id, changed: true })
+    await applyEvent({ providerId: second.provider_execution_id! }, { status: 'no-answer' }, 'webhook') // a line frees
+    const before = started.length
+    await dispatchQueued()
+    expect(started.length).toBe(before) // nothing dialled
+    s = (await getSearch(searchId, true))!
+    expect(s.executions.find((e) => e.status === 'failed' && e.id !== second.id)).toMatchObject({ error: `not needed: already found at ${first.shop.name}` })
+    expect(s.executions.find((e) => e.id === first.id)).toMatchObject({ status: 'talking', live_answer: { in_stock: 'yes', can_hold: 'yes' } })
+    // Without the operator token the reason stays readable, so the call still shows as "not called", not as failed.
+    expect((await getSearch(searchId))!.executions.filter((e) => e.error?.startsWith('not needed: '))).toHaveLength(1)
+    const logged = await db().from('call_events').select('source, payload').eq('execution_id', first.id).eq('source', 'tool')
+    expect(logged.data).toEqual([{ source: 'tool', payload: { status: '__live', live: { in_stock: 'yes', can_hold: 'yes' } } }])
   })
 })

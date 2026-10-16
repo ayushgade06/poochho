@@ -17,6 +17,10 @@ export const DEMO_SHOPS = demo as DemoShop[]
 
 type Req = Pick<SearchRequest, 'product' | 'brand_or_variant' | 'category' | 'quantity' | 'unit' | 'area'>
 
+// Simulated calls run SIM_LINES at a time, like a real account's concurrency limit (2 on a Bolna trial), so the
+// "stop calling once found" skip is visible in demos.
+export const SIM_LINES = 3
+
 const RANGES: Record<string, [number, number]> = { grocery: [40, 400], pharmacy: [30, 450], hardware: [80, 1200], electronics: [300, 3000], stationery: [10, 150] }
 const round5 = (n: number) => Math.max(5, Math.round(n / 5) * 5)
 // What the agent says. A comma, not brackets: the voice reads "boAt Airdopes 141, Black" with a natural pause.
@@ -112,8 +116,11 @@ function extraction(fields: Record<string, string | null>, confidence: 'high' | 
 const turns = (t: [boolean, string][]) => t.map(([agent, s]) => `${agent ? 'assistant' : 'user'}: ${s}`).join('\n') + '\n'
 
 // Event timeline mirrors Bolna's documented order: queued → initiated → ringing → in-progress →
-// call-disconnected → completed. Transcript and extraction arrive with "completed", as on live calls.
-function timeline(id: string, s: Sim, final: { transcript: string; extracted_data: object } | null): ScriptEvent[] {
+// call-disconnected → completed. Transcript and extraction arrive with "completed", as on live calls. Mid-call,
+// the agent's report_availability tool calls arrive as `__live` events with the params as Bolna sends them
+// (strings): `live` lists them as [fraction of the talk time, params].
+type Live = [number, Record<string, string>][]
+function timeline(id: string, s: Sim, final: { transcript: string; extracted_data: object } | null, live: Live = []): ScriptEvent[] {
   const ev = (at: number, status: string, extra: object = {}) => ({ at, payload: { id, status, ...extra } })
   const head = [ev(0, 'queued'), ev(700, 'initiated'), ev(1500, 'ringing')]
   if (s.outcome === 'busy') return [ev(0, 'queued'), ev(700, 'initiated'), ev(s.ringMs, 'busy')]
@@ -122,6 +129,7 @@ function timeline(id: string, s: Sim, final: { transcript: string; extracted_dat
   return [
     ...head,
     ev(s.ringMs, 'in-progress'),
+    ...live.map(([f, params]) => ev(Math.round(s.ringMs + f * (s.talkMs ?? 12000)), '__live', { tool_call: params })),
     ev(end, 'call-disconnected', { conversation_duration: 0 }),
     ev(end + 2500, 'completed', { ...final, conversation_duration: Math.round((s.talkMs ?? 12000) / 1000) }),
   ]
@@ -138,10 +146,12 @@ export function quoteScript(shop: DemoShop, req: Req, lang: string, providerId: 
   const stock = s.stock ?? 'yes'
   const t: [boolean, string][] = [[true, L.greeting], [false, L.yes], [true, L.ask(item, q, req.area)]]
   const f: Record<string, string | null> = { in_stock: stock, unit_price_inr: '', total_price_inr: '', price_unit: '', qty_available: '', brand_or_variant: req.brand_or_variant ?? '', pickup_or_delivery: 'unknown', ready_in_minutes: '', can_hold: 'unknown', opt_out: 'no', notes: '' }
+  const live: Live = []
   // stock_quote is the shopkeeper's availability line, verbatim, as Bolna's extraction is asked to return it.
   if (stock === 'no') {
     t.push([false, L.none], [true, L.sorry])
     f.stock_quote = L.none
+    live.push([0.5, { in_stock: 'no' }])
   } else {
     f.stock_quote = stock === 'partial' ? L.some(s.qty ?? 1, req.unit) : L.have(q)
     t.push([false, f.stock_quote], [true, L.price])
@@ -157,8 +167,10 @@ export function quoteScript(shop: DemoShop, req: Req, lang: string, providerId: 
     const m = s.ready ?? 15
     t.push([true, L.hold], [false, s.hold === 'yes' ? L.holdYes(m) : s.hold === 'no' ? L.holdNo : L.holdMaybe(m)], [true, L.bye])
     Object.assign(f, { ready_in_minutes: String(m), can_hold: s.hold ?? 'unknown', pickup_or_delivery: 'pickup' })
+    // As the prompt asks: report right after the availability answer, and again after price and hold.
+    live.push([0.35, { in_stock: stock, qty_available: f.qty_available || 'None' }], [0.85, { in_stock: stock, price_inr: f.total_price_inr || 'None', ready_in_minutes: String(m), can_hold: s.hold ?? 'unknown' }])
   }
-  return timeline(providerId, s, { transcript: turns(t), extracted_data: extraction(f, s.confidence ?? 'med') })
+  return timeline(providerId, s, { transcript: turns(t), extracted_data: extraction(f, s.confidence ?? 'med') }, live)
 }
 
 export function holdScript(shop: DemoShop, req: Req, lang: string, providerId: string): ScriptEvent[] {

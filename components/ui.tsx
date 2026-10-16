@@ -68,13 +68,13 @@ const REASONS: [RegExp, string][] = [
   [/without a conversation/, 'Picked up, but no conversation'],
   [/wallet balance/, 'Bolna wallet balance too low'],
   [/rescheduled/, 'Provider pushed it outside calling hours; not followed up'],
-  [/^not placed: /, ''],
   [/^could not start the call/, 'Could not start the call'],
   [/watchdog/, 'No result from the provider in time'],
 ]
+// "not placed: …" and "not needed: already found at …" are shown as written, capitalised.
 export function reason(error: string | null) {
   if (!error) return null
-  for (const [re, text] of REASONS) if (re.test(error)) return text || error.replace(/^not placed: /, 'Not placed: ')
+  for (const [re, text] of REASONS) if (re.test(error)) return text
   return error.charAt(0).toUpperCase() + error.slice(1)
 }
 

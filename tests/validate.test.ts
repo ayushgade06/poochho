@@ -7,7 +7,10 @@ describe('validateSearch', () => {
   it('accepts a complete request and coerces numbers', () => {
     const r = validateSearch({ ...good, max_budget_inr: '600', need_within_minutes: 45 }, 5)
     expect(r.ok).toBe(true)
-    if (r.ok) expect(r.value).toMatchObject({ quantity: 2, max_budget_inr: 600, need_within_minutes: 45, brand_or_variant: null, category: null })
+    if (r.ok) expect(r.value).toMatchObject({ quantity: 2, max_budget_inr: 600, need_within_minutes: 45, brand_or_variant: null, category: null, stop_when_found: true })
+    const off = validateSearch({ ...good, stop_when_found: false }, 5)
+    expect(off.ok && off.value.stop_when_found).toBe(false)
+    expect(validateSearch({ ...good, stop_when_found: 'no' }, 5).ok).toBe(false)
   })
 
   it('reports every missing required field', () => {
