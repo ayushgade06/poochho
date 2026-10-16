@@ -309,8 +309,8 @@ of it); once memory freed up the production build succeeded and judge mode was c
 | README top: one-paragraph pitch and how to try it | Done; the live link and the video link get added after deployment |
 | Deploy to Vercel, set the webhook and tool URLs, smoke test | Waits for your OK |
 | Record a real LIVE run and export its replay | Waits for you (you press the buttons) |
-| PITCH.md with re-checked facts and real `/metrics?mode=live` numbers | In progress |
-| Submission checklist | See DEMO.md / below once PITCH is done |
+| PITCH.md with re-checked facts and real `/metrics?mode=live` numbers | Done: all 16 sources re-checked on 2026-10-17 (11 supported as worded, 5 partly; every page reachable). Corrections applied: Medfinder is $17.50–$35 per search, not ~$50; Awign sells store audits and telecalling as separate services; "Have AI check pricing" covers service businesses, so the pitch cites "Let Google Call" for stock; AIOCD's 12.4 lakh is its own membership figure; DPDP core duties start 13 May 2027. Real numbers: early pilot, n = 1 |
+| Submission checklist | Done (DEMO.md) |
 
 The production build and the M5 browser check also ran once memory freed up (2026-10-17 ~01:00): judge mode shows its
 plum banner, the "Your shop" card with **Answer the call** (not pressed: the first browser call is yours), and the
