@@ -23,8 +23,8 @@
 | "Hold it" reservation call (separate, explicit, confirmed only by the shop) | Done | Integration test; browser (simulated + replay) |
 | Live dashboard: switchboard cards, transcripts, ledger, best-match card | Done | Browser at 1568 px and 375 px |
 | Supabase Realtime updates (broadcast ping, no data in payload) + polling fallback | Done | Integration test receives the broadcast; browser shows "Realtime connected" |
-| Spoken summary (Hindi/English) | Done | Unit tests for text. Browser speech fallback implemented; Sarvam TTS implemented, **untested (no key)** |
-| Voice input | Done | Parser unit tests. Browser speech recognition and Sarvam STT implemented; **no microphone test run** |
+| Spoken summary (Hindi/English) | Done | Unit tests for text. Browser speech fallback implemented; Sarvam TTS verified live 2026-10-16, in 11 languages (translated summaries labelled) |
+| Voice input | Done | Parser unit tests. Sarvam STT + form filling verified live with Marathi audio (route returns language and fields in ~3 s); **no microphone test run** |
 | WhatsApp share (verified facts only; SIMULATED/REPLAY labelled) | Done | Unit test; browser (link text checked) |
 | `/metrics` (rates with denominators, median time to first quote, accuracy, by language, insufficient-data flags) | Done | Unit tests; browser |
 | Manual labelling + CSV export (operator-only, formula-injection safe) | Done | Unit tests; HTTP tests with/without token |
@@ -160,7 +160,7 @@ REPLAY plays the sample run the same way.
 5. **First live calls (M1/M2/M4)** need you present, 09:00–20:00 IST, `LIVE_CALLS_ENABLED=true`, and the operator
    token (`POOCHHO_ADMIN_TOKEN` in `.env.local`). Verify against the real webhook and extraction shape, then record a
    replay of a real run for the stage fallback.
-6. **Sarvam** (optional): add `SARVAM_API_KEY` to switch voice input/output from browser speech to Sarvam; untested so far.
+6. ~~Sarvam~~: key added and verified 2026-10-16.
 7. **Hindi review:** the prompt suggestions in `docs/bolna-setup.md` and the Hindi summary and simulated lines should be
    checked by a native speaker.
 

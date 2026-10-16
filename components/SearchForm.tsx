@@ -2,10 +2,10 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { CATEGORIES, LANGS, UNITS, type Lang } from '@/lib/types'
+import { CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type VoiceLang } from '@/lib/types'
 import { qtyLabel } from '@/lib/rank'
 import { parseSpokenRequest } from '@/lib/voice'
-import { field, label, ModeBanner, token } from './ui'
+import { field, label, ModeBanner, token, voiceLang } from './ui'
 
 type Config = {
   live: { blockers: string[]; inWindow: boolean; window: string }
@@ -33,7 +33,7 @@ export default function SearchForm() {
   const [consent, setConsent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [fail, setFail] = useState<string | null>(null)
-  const [heard, setHeard] = useState<{ text: string; filled: string[] } | null>(null)
+  const [heard, setHeard] = useState<{ text: string; filled: string[]; lang?: VoiceLang | null } | null>(null)
 
   useEffect(() => {
     fetch('/api/config').then((r) => r.json()).then(setConfig).catch(() => setFail('Could not load settings.'))
@@ -97,10 +97,16 @@ export default function SearchForm() {
     }
   }
 
-  function onHeard(text: string) {
-    const p = parseSpokenRequest(text)
-    setF((prev) => ({ ...prev, ...(p.product && { product: p.product }), ...(p.quantity && { quantity: String(p.quantity) }), ...(p.unit && { unit: p.unit }) }))
-    setHeard({ text, filled: (['product', 'quantity', 'unit'] as const).filter((k) => p[k] !== undefined) })
+  // Sarvam returns the detected language and fields understood from the whole sentence; otherwise the local
+  // parser picks out product, quantity and unit. Either way the user reviews every field before any call.
+  function onHeard(text: string, sarvam?: Heard) {
+    const p: Record<string, string | number> = sarvam?.fields ?? parseSpokenRequest(text)
+    const filled = (Object.keys(EMPTY) as (keyof typeof EMPTY)[]).filter((k) => p[k] !== undefined && k !== 'language')
+    const lang = sarvam?.language
+    if (lang) voiceLang.set(lang)
+    setF((prev) => ({ ...prev, ...Object.fromEntries(filled.map((k) => [k, String(p[k])])), ...(lang === 'en-IN' ? { language: 'en' as Lang } : lang === 'hi-IN' ? { language: 'hi' as Lang } : {}) }))
+    setErrors({})
+    setHeard({ text, filled: filled.map((k) => k.replace(/_/g, ' ')), lang })
   }
 
   if (mode === 'replay' || step === 'form')
@@ -164,7 +170,7 @@ export default function SearchForm() {
               <Err id="product-err" msg={errors.product} />
               {heard && (
                 <p className="mt-2 rounded-lg bg-marigold-soft px-3 py-2 text-sm">
-                  Heard: <q>{heard.text}</q>.{' '}
+                  Heard{heard.lang ? ` (${VOICE_LANGS[heard.lang]})` : ''}: <q>{heard.text}</q>.{' '}
                   {heard.filled.length ? `Filled ${heard.filled.join(', ')} from your voice. Please check them.` : 'Could not pick out the fields, so please type them.'}
                 </p>
               )}
@@ -360,8 +366,9 @@ const Err = ({ id, msg }: { id: string; msg?: string }) =>
 
 // Voice input: Sarvam STT (server) when configured, otherwise the browser's speech recognition.
 const noop = () => () => {}
+type Heard = { language: VoiceLang | null; fields: Record<string, string | number> | null }
 type Recognition = { lang: string; interimResults: boolean; onresult: (e: { results: { 0: { transcript: string } }[] }) => void; onerror: () => void; onend: () => void; start: () => void }
-function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 'browser'; onText: (t: string) => void }) {
+function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 'browser'; onText: (t: string, sarvam?: Heard) => void }) {
   const [state, setState] = useState<'idle' | 'listening' | 'working' | 'error'>('idle')
   const rec = useRef<MediaRecorder | null>(null)
   // Browser-only capability (null on the server). Sarvam needs the operator token; otherwise the browser's own
@@ -401,11 +408,10 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
         setState('working')
         const fd = new FormData()
         fd.append('audio', new Blob(chunks, { type: mr.mimeType || 'audio/webm' }))
-        fd.append('lang', lang)
         const r = await fetch('/api/stt', { method: 'POST', body: fd, headers: { 'x-admin-token': token.get() } }).catch(() => null)
         const d = r && (await r.json().catch(() => null))
         if (r?.ok && d?.transcript) {
-          onText(d.transcript)
+          onText(d.transcript, d)
           setState('idle')
         } else setState('error')
       }
@@ -419,7 +425,7 @@ function VoiceButton({ lang, speech, onText }: { lang: Lang; speech: 'sarvam' | 
   return (
     <button type="button" onClick={go} className={`mb-1.5 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${state === 'listening' ? 'border-chili bg-chili text-white' : 'border-line bg-white text-ink'}`} aria-live="polite">
       <span aria-hidden>{state === 'listening' ? '■' : '🎙'}</span>
-      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? "Didn't catch that, try again" : `Speak (${how === 'sarvam' ? 'Sarvam' : 'browser'})`}
+      {state === 'listening' ? 'Listening… tap to stop' : state === 'working' ? 'Transcribing…' : state === 'error' ? "Didn't catch that, try again" : how === 'sarvam' ? 'Speak in any Indian language' : 'Speak (browser)'}
     </button>
   )
 }

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { CONFIDENCE, inr, qtyLabel, WEIGHTS, winnerReason, type Ranked } from '@/lib/rank'
-import { holdOutcome, searchSummary, shareText, type HoldOutcome } from '@/lib/summary'
-import type { PublicExecution, SearchState } from '@/lib/types'
-import { speakText, token } from './ui'
+import { holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
+import { VOICE_LANGS, type PublicExecution, type SearchState, type VoiceLang } from '@/lib/types'
+import { speakText, token, voiceLang } from './ui'
 
 const OUTCOME: Record<HoldOutcome, [string, string]> = {
   confirmed: ['Reservation confirmed by the shop', 'text-kirana'],
@@ -14,7 +14,7 @@ const OUTCOME: Record<HoldOutcome, [string, string]> = {
   unknown: ['Outcome unknown: the shop did not clearly agree', 'text-marigold-deep'],
 }
 
-export default function Results({ data, ranked, holds, finished }: { data: SearchState; ranked: Ranked[]; holds: PublicExecution[]; finished: boolean }) {
+export default function Results({ data, ranked, holds, finished, sarvam }: { data: SearchState; ranked: Ranked[]; holds: PublicExecution[]; finished: boolean; sarvam: boolean }) {
   const req = data.request
   const winner = ranked.find((r) => r.winner)
   const byId = new Map(data.executions.map((e) => [e.id, e]))
@@ -22,6 +22,7 @@ export default function Results({ data, ranked, holds, finished }: { data: Searc
   const winnerHold = winner && holdFor(winner)
   const hold = winnerHold ? { shopName: winner!.shopName, outcome: holdOutcome(winnerHold) } : null
   const summary = searchSummary(data)
+  const saved = finished ? timeSaved(data.executions) : null
 
   return (
     <section className="space-y-6" aria-labelledby="results">
@@ -44,14 +45,11 @@ export default function Results({ data, ranked, holds, finished }: { data: Searc
         )
       )}
 
+      {saved && saved.calls > 1 && saved.sequentialSec > saved.parallelSec && <TimeSaved {...saved} />}
+
       <Ledger data={data} ranked={ranked} holdFor={holdFor} />
 
-      <div className="flex flex-col gap-4 rounded-2xl border border-line bg-card p-5 sm:flex-row sm:items-center">
-        <p className="flex-1 text-lg leading-relaxed" lang={req.language}>
-          {summary}
-        </p>
-        <SpeakButton searchId={req.id} text={summary} lang={req.language} />
-      </div>
+      <Summary searchId={req.id} text={summary} lang={req.language} sarvam={sarvam} />
     </section>
   )
 }
@@ -216,14 +214,71 @@ function Bars({ f }: { f: Ranked['factors'] }) {
   )
 }
 
-function SpeakButton({ searchId, text, lang }: { searchId: string; text: string; lang: 'hi' | 'en' }) {
-  const [via, setVia] = useState<string | null>(null)
+const mmss = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+
+// Measured from this run's own call timestamps, not an estimate.
+function TimeSaved({ calls, parallelSec, sequentialSec }: { calls: number; parallelSec: number; sequentialSec: number }) {
   return (
-    <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
-      <button className="rounded-xl border-2 border-ink px-5 py-3 font-semibold hover:bg-ink hover:text-paper" onClick={async () => setVia(await speakText(searchId, text, lang))}>
-        🔊 Hear the summary
-      </button>
-      {via && <span className="text-xs text-muted">{via === 'sarvam' ? 'Voice: Sarvam' : via === 'browser' ? "Voice: this browser's speech" : 'No speech available here; please read the text.'}</span>}
+    <div className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-2xl border border-line bg-card px-6 py-4">
+      <p className="tabular">
+        <span className="font-display text-4xl">{mmss(parallelSec)}</span>
+        <span className="block text-sm text-muted">{calls} calls, all at once</span>
+      </p>
+      <p className="tabular text-muted">
+        <span className="font-display text-4xl line-through decoration-chili/60">{mmss(sequentialSec)}</span>
+        <span className="block text-sm">the same calls, one by one</span>
+      </p>
+      <p className="flex-1 text-lg">
+        <strong className="text-kirana">{Math.round((1 - parallelSec / sequentialSec) * 100)}% faster</strong> than ringing each shop yourself, and you didn&apos;t have to make a single call.
+      </p>
+    </div>
+  )
+}
+
+const noop = () => () => {}
+// The summary in the request's language; with Sarvam it can also be heard in 9 more Indian languages
+// (machine-translated, labelled as such). Defaults to the language the user spoke in, if any.
+function Summary({ searchId, text, lang, sarvam }: { searchId: string; text: string; lang: 'hi' | 'en'; sarvam: boolean }) {
+  const spoken = useSyncExternalStore(noop, voiceLang.get, () => null)
+  const [picked, setTo] = useState<VoiceLang | null>(null)
+  const to = picked ?? spoken ?? (lang === 'en' ? 'en-IN' : 'hi-IN')
+  const [out, setOut] = useState<Awaited<ReturnType<typeof speakText>> | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function play() {
+    setBusy(true)
+    setOut(await speakText(searchId, text, sarvam ? to : lang === 'en' ? 'en-IN' : 'hi-IN'))
+    setBusy(false)
+  }
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-card p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <p className="flex-1 text-lg leading-relaxed" lang={lang}>
+          {text}
+        </p>
+        <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+          <div className="flex gap-2">
+            {sarvam && (
+              <select aria-label="Language to hear the summary in" className="rounded-xl border-2 border-ink bg-white px-2 py-3 font-semibold" value={to} onChange={(e) => setTo(e.target.value as VoiceLang)}>
+                {(Object.keys(VOICE_LANGS) as VoiceLang[]).map((l) => (
+                  <option key={l} value={l}>
+                    {VOICE_LANGS[l]}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button className="rounded-xl border-2 border-ink px-5 py-3 font-semibold hover:bg-ink hover:text-paper disabled:opacity-50" onClick={play} disabled={busy}>
+              {busy ? 'Preparing…' : '🔊 Hear the summary'}
+            </button>
+          </div>
+          {out && <span className="text-xs text-muted">{out.via === 'sarvam' ? `Voice: Sarvam Bulbul${out.translated ? ' · translated by Sarvam' : ''}` : out.via === 'browser' ? "Voice: this browser's speech" : 'No speech available here; please read the text.'}</span>}
+        </div>
+      </div>
+      {out?.translated && out.text && (
+        <p className="border-t border-line pt-3 text-lg leading-relaxed" lang={to.slice(0, 2)}>
+          <span className="mr-2 rounded bg-indigo-soft px-1.5 py-0.5 text-xs font-bold uppercase text-indigo">{VOICE_LANGS[to]} · machine-translated</span>
+          {out.text}
+        </p>
+      )}
     </div>
   )
 }

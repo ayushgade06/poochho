@@ -5,6 +5,14 @@ export type Mode = (typeof MODES)[number]
 export const LANGS = { hi: 'Hindi', en: 'English' } as const
 export type Lang = keyof typeof LANGS
 
+// Languages the user can speak to Poochho and hear the summary in (Sarvam saaras STT + bulbul TTS). Shops are
+// still called in Hindi or English; other languages are machine-translated for the user only.
+export const VOICE_LANGS = {
+  'hi-IN': 'हिन्दी', 'en-IN': 'English', 'mr-IN': 'मराठी', 'bn-IN': 'বাংলা', 'ta-IN': 'தமிழ்', 'te-IN': 'తెలుగు',
+  'kn-IN': 'ಕನ್ನಡ', 'ml-IN': 'മലയാളം', 'gu-IN': 'ગુજરાતી', 'pa-IN': 'ਪੰਜਾਬੀ', 'od-IN': 'ଓଡ଼ିଆ',
+} as const
+export type VoiceLang = keyof typeof VOICE_LANGS
+
 export const UNITS = ['piece', 'packet', 'kg', 'g', 'litre', 'ml', 'strip', 'bottle', 'box', 'dozen', 'metre'] as const
 export const CATEGORIES = ['grocery', 'pharmacy', 'hardware', 'electronics', 'stationery', 'other'] as const
 

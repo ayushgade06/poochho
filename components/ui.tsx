@@ -1,7 +1,7 @@
 'use client'
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import type { CallStatus, Mode } from '@/lib/types'
+import { VOICE_LANGS, type CallStatus, type Mode, type VoiceLang } from '@/lib/types'
 
 // ---------- mode banners: SIMULATED, REPLAY and LIVE never look alike ----------
 export function ModeBanner({ mode, replaySource, recordedAt }: { mode: Mode; replaySource?: 'live' | 'simulated'; recordedAt?: string }) {
@@ -93,29 +93,44 @@ export const token = {
   },
 }
 
-// ---------- speech out: Sarvam TTS when configured (server speaks its own summary of the search), else the
-// browser's voice reading the same text ----------
-export async function speakText(searchId: string, text: string, lang: 'hi' | 'en'): Promise<'sarvam' | 'browser' | 'none'> {
+// The language the user last spoke in (Sarvam-detected); the results page offers the summary in it.
+export const voiceLang = {
+  get: (): VoiceLang | null => {
+    try {
+      const v = sessionStorage.getItem('poochho-voice-lang')
+      return v && v in VOICE_LANGS ? (v as VoiceLang) : null
+    } catch {
+      return null
+    }
+  },
+  set: (v: VoiceLang) => {
+    try {
+      sessionStorage.setItem('poochho-voice-lang', v)
+    } catch {}
+  },
+}
+
+// ---------- speech out: Sarvam TTS when configured (server speaks its own summary of the search, translated
+// when needed), else the browser's voice reading the same Hindi/English text ----------
+export async function speakText(searchId: string, text: string, lang: VoiceLang): Promise<{ via: 'sarvam' | 'browser' | 'none'; text?: string; translated?: boolean }> {
   try {
-    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ search_id: searchId }) })
+    const r = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ search_id: searchId, lang }) })
     if (r.ok) {
-      const url = URL.createObjectURL(await r.blob())
-      const audio = new Audio(url)
-      audio.onended = () => URL.revokeObjectURL(url)
-      await audio.play()
-      return 'sarvam'
+      const d = await r.json()
+      await new Audio(`data:audio/wav;base64,${d.audio}`).play()
+      return { via: 'sarvam', text: d.text, translated: d.translated }
     }
   } catch {}
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     const u = new SpeechSynthesisUtterance(text)
-    u.lang = lang === 'hi' ? 'hi-IN' : 'en-IN'
-    const voice = speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(lang))
+    u.lang = lang === 'en-IN' ? 'en-IN' : 'hi-IN'
+    const voice = speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith(u.lang.slice(0, 2)))
     if (voice) u.voice = voice
     speechSynthesis.cancel()
     speechSynthesis.speak(u)
-    return 'browser'
+    return { via: 'browser' }
   }
-  return 'none'
+  return { via: 'none' }
 }
 
 // ---------- browser Supabase client: Realtime pings only (the tables are closed to this key) ----------

@@ -25,7 +25,12 @@ banner says so honestly.
 | 0:20–0:50 | Switchboard: lamps ring (marigold), talk (blue waveform), answer (green); one shows *Not reached · No answer* | "Every call says *I'm an AI assistant* in its first sentence, asks three questions — stock, price, can you hold it — and hangs up in under a minute. This shop didn't answer; we never retry automatically." |
 | 0:50–1:05 | Scroll to **Ledger** | "Answers come back as structured data and are ranked by a fixed formula, not an LLM. Mehta didn't quote a price, so it says *not quoted*, never zero. Patil only has one packet, so it can't be the best match, however cheap." |
 | 1:05–1:20 | Best-match card, **Hold it**, **Yes** | "One tap places a second, separate call asking Sharma Kirana to keep it aside. It only says *reserved* if the shop actually agrees on that call." Wait for **Reservation confirmed by the shop**. |
-| 1:20–1:30 | **Hear the summary** (Hindi), point at WhatsApp | "A spoken summary in your language, and one tap to share it. **You ask once. Poochho asks everyone.**" |
+| 1:20–1:30 | Point at the **time-saved** strip, pick **मराठी** (or the judge's language), **Hear the summary**, point at WhatsApp | "Measured from this run: all calls together took X, one by one would take Y. And the answer comes back in your language: eleven Indian languages through Sarvam. **You ask once. Poochho asks everyone.**" |
+
+**Optional opener (Sarvam, needs the operator token in the tab):** tap **Speak in any Indian language** and say one
+sentence in Marathi/Tamil/Hindi, e.g. "मला कोथरूड, पुणे मध्ये दोन पॅकेट अमूल बटर हवे आहे". The whole form fills itself
+(product, quantity, area, city) in about 3 seconds. Rehearse it on the venue's mic first; if it mishears, fix the field
+by hand and say "you always review before anything is called".
 
 ## If something goes wrong
 

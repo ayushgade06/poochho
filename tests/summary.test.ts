@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { rankResults } from '@/lib/rank'
-import { holdOutcome, shareText, summarize } from '@/lib/summary'
+import { holdOutcome, shareText, summarize, timeSaved } from '@/lib/summary'
 import type { Extraction } from '@/lib/types'
 
 const req = { product: 'Amul Butter', quantity: 2, unit: 'packet', area: 'Kothrud', max_budget_inr: null, need_within_minutes: null }
@@ -42,5 +42,16 @@ describe('holdOutcome and shareText', () => {
     expect(shareText({ ...req, mode: 'simulated' }, w, false)).toMatch(/^\[SIMULATED DEMO, not a real shop\] Poochho found Amul Butter at Sharma Kirana: ₹540 for 2 packets/)
     expect(shareText({ ...req, mode: 'live' }, w, true)).toMatch(/^Poochho found .* The shop confirmed it will hold it\./)
     expect(shareText({ ...req, mode: 'live' }, w, true)).not.toMatch(/\+91|\d{10}/)
+  })
+})
+
+describe('timeSaved', () => {
+  const c = (d: string, e: string | null, kind: 'quote' | 'hold' = 'quote') => ({ kind, dispatched_at: `2026-10-16T10:00:${d}Z`, ended_at: e && `2026-10-16T10:${e}Z` })
+  it('compares the measured parallel time with calling one by one', () => {
+    expect(timeSaved([c('00', '00:40'), c('01', '00:51'), c('02', '00:32'), c('00', '05:00', 'hold')])).toEqual({ calls: 3, parallelSec: 51, sequentialSec: 120 })
+  })
+  it('waits until every quote call has ended', () => {
+    expect(timeSaved([c('00', '00:40'), c('01', null)])).toBeNull()
+    expect(timeSaved([])).toBeNull()
   })
 })

@@ -8,8 +8,15 @@ It also gives a spoken summary in Hindi or English. One tap places a separate ca
 for you.
 
 Built for the Bolna Buildathon. Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, Supabase Postgres + Realtime,
-Bolna, optional Sarvam speech. **Poochho itself uses no LLM**: validation, ranking, explanations and summaries are
+Bolna, optional Sarvam speech. **No LLM decides anything**: validation, ranking, explanations and summaries are
 deterministic code. The voice calls and post-call extraction run on Bolna.
+
+**Speak in any of 11 Indian languages** (with `SARVAM_API_KEY`). Say "मला कोथरूड, पुणे मध्ये दोन पॅकेट अमूल बटर हवे आहे"
+and Sarvam detects Marathi, transcribes it (`saaras:v4`), and `sarvam-105b-conversations` fills the whole form:
+product, quantity, unit, category, city and area. The model's output is reduced to known fields and enum values, and
+you review every field before anything is called. Afterwards, hear the summary in Hindi, English, Marathi, Bengali,
+Tamil, Telugu, Kannada, Malayalam, Gujarati, Punjabi or Odia: Sarvam Translate plus Bulbul, labelled
+machine-translated. Shops are still called in Hindi or English.
 
 ## Modes
 
@@ -104,7 +111,7 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 | `MAX_LIVE_CALLS_PER_DAY` | | Default 25 |
 | `CALL_WINDOW_IST` | | Default `09:00-20:00` |
 | `CALL_WATCHDOG_SECONDS` | | Default 300 (minimum 120), measured from the last call milestone |
-| `SARVAM_API_KEY` | optional | Sarvam STT (`saaras:v4`) and TTS (`bulbul:v3`). Without it the browser's speech APIs are used |
+| `SARVAM_API_KEY` | optional | Sarvam STT (`saaras:v4`, language auto-detected), form filling (`sarvam-105b-conversations`), translation (`sarvam-translate:v1`) and TTS (`bulbul:v3`). Without it the browser's speech APIs are used (Hindi/English only) |
 
 ## Database
 
@@ -212,7 +219,7 @@ Rules:
   supervised demo; add auth before a public launch.
 - The live calling path (Bolna `POST /call`, webhooks, polling, extraction) is implemented to Bolna's documented
   API and tested against a mocked Bolna only. No real call was made while building it. See `BUILD_REPORT.md`.
-- Voice input and output with Sarvam are implemented to Sarvam's docs but untested without a key. The browser speech
-  fallback depends on the browser.
+- Sarvam STT, form filling, translation and TTS were verified against the live API on 2026-10-16 (Marathi and
+  Tamil). The browser speech fallback depends on the browser.
 - Shop discovery via Google Places is not implemented. Only consenting test shops can be called.
 - Hindi strings were written by the developer and need review by a native speaker.

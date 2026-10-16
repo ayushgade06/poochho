@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseSpokenRequest } from '@/lib/voice'
+import { cleanUnderstood } from '@/lib/sarvam'
 
 describe('parseSpokenRequest', () => {
   it('reads quantity, unit and product in either order', () => {
@@ -25,5 +26,14 @@ describe('parseSpokenRequest', () => {
   it('leaves out what it did not hear', () => {
     expect(parseSpokenRequest('')).toEqual({})
     expect(parseSpokenRequest('kilo sugar')).toEqual({ unit: 'kg', product: 'sugar' })
+  })
+})
+
+describe('cleanUnderstood (Sarvam model output)', () => {
+  it('keeps only known keys, enum values and sane numbers', () => {
+    expect(cleanUnderstood({ product: ' Amul Butter ', quantity: 2, unit: 'packet', category: 'grocery', city: 'Pune', area: 'Kothrud', brand_or_variant: null })).toEqual({ product: 'Amul Butter', quantity: 2, unit: 'packet', category: 'grocery', city: 'Pune', area: 'Kothrud' })
+    expect(cleanUnderstood({ product: 'x'.repeat(500), quantity: -3, unit: 'tonne', category: 'weapons', shop_ids: ['a'], phone: '999' })).toEqual({ product: 'x'.repeat(120) })
+    expect(cleanUnderstood(null)).toEqual({})
+    expect(cleanUnderstood({ quantity: '2' })).toEqual({})
   })
 })

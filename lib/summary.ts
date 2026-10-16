@@ -43,13 +43,13 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
 }
 
 // The summary for a whole search, shared by the results page and the TTS route.
-export function searchSummary(s: SearchState) {
+export function searchSummary(s: SearchState, lang: Lang = s.request.language) {
   const quotes = s.executions.filter((e) => e.kind === 'quote')
   const ranked = rankResults(s.request, quotes.map((e) => ({ id: e.id, shopName: e.shop.name, status: e.status, error: e.error, extracted: e.extracted })))
   const w = ranked.find((r) => r.winner)
   const shopId = w && quotes.find((e) => e.id === w.id)?.shop_id
   const h = shopId ? s.executions.find((e) => e.kind === 'hold' && e.shop_id === shopId) : undefined
-  return summarize(s.request, ranked, s.request.language, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
+  return summarize(s.request, ranked, lang, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
 }
 
 // WhatsApp share text: only the verified quote the user chooses to share. No phone numbers.
@@ -57,4 +57,16 @@ export function shareText(req: Req & Pick<SearchRequest, 'mode'>, r: Ranked, res
   const price = r.total !== null ? `${inr(r.total)} for ${qtyLabel(req.quantity, req.unit)}` : 'price not quoted'
   const tag = req.mode === 'simulated' ? '[SIMULATED DEMO, not a real shop] ' : req.mode === 'replay' ? '[REPLAY of a recorded run] ' : ''
   return `${tag}Poochho found ${req.product} at ${r.shopName}: ${price}. ${r.explanation}.${reserved ? ' The shop confirmed it will hold it.' : ''} (Quoted by phone; please confirm at the shop.)`
+}
+
+// Parallel calling vs ringing the same shops one after another: the measured wall-clock time of the whole search
+// against the sum of each call's own dial-to-end time. Null until every quote call has ended.
+export function timeSaved(calls: Pick<PublicExecution, 'kind' | 'dispatched_at' | 'ended_at'>[]) {
+  const q = calls.filter((c) => c.kind === 'quote')
+  if (!q.length || q.some((c) => !c.dispatched_at || !c.ended_at)) return null
+  const start = q.map((c) => Date.parse(c.dispatched_at!))
+  const end = q.map((c) => Date.parse(c.ended_at!))
+  const parallel = Math.max(...end) - Math.min(...start)
+  const sequential = q.reduce((sum, _, i) => sum + Math.max(0, end[i] - start[i]), 0)
+  return { calls: q.length, parallelSec: Math.round(parallel / 1000), sequentialSec: Math.round(sequential / 1000) }
 }

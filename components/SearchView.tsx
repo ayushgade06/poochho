@@ -18,6 +18,7 @@ export default function SearchView({ id }: { id: string }) {
   const [rt, setRt] = useState<'connecting' | 'live' | 'off'>('connecting')
   const [now, setNow] = useState(0)
   const [replays, setReplays] = useState<ReplayMeta[]>([])
+  const [sarvam, setSarvam] = useState(false)
 
   // Supabase Realtime: the DB pings `search:<id>` on every call change; we refetch through the API.
   useEffect(() => {
@@ -77,12 +78,14 @@ export default function SearchView({ id }: { id: string }) {
   }, [active])
 
   useEffect(() => {
-    if (mode !== 'replay') return
     fetch('/api/config')
       .then((r) => r.json())
-      .then((c) => setReplays(c.replays ?? []))
+      .then((c) => {
+        setReplays(c.replays ?? [])
+        setSarvam(c.speech === 'sarvam')
+      })
       .catch(() => {})
-  }, [mode])
+  }, [])
 
   if (missing)
     return (
@@ -144,7 +147,7 @@ export default function SearchView({ id }: { id: string }) {
         ))}
       </section>
 
-      {finishedN > 0 && <Results data={data} ranked={ranked} holds={holds} finished={finishedN === quotes.length} />}
+      {finishedN > 0 && <Results data={data} ranked={ranked} holds={holds} finished={finishedN === quotes.length} sarvam={sarvam} />}
     </div>
   )
 }
