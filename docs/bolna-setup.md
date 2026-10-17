@@ -139,7 +139,10 @@ by the developer and **needs a native speaker's review**. Both prompts have an F
 (added 2026-10-16): the agent explains, and ends the call politely if the shopkeeper objects. Don't set it through the API: on a multilingual agent the API's
 `agent_prompts` is not what calls use, and every dashboard save rewrites it. Have a native speaker review the Hindi.
 
-## 6. Tool: report_availability (answers mid-call). Connect after deployment
+## 6. Tool: report_availability (answers mid-call). Connected 2026-10-17
+
+**Done** for <https://poochho.vercel.app>: the tool, the webhook (Send test → 202) and the prompt line below are
+live on the agent; `npm run bolna -- check` shows all three prompts matching the files.
 
 The agent reports what it heard while the shopkeeper is still on the line, so the card fills in during the call. It
 needs the public URL, so it waits for the Vercel deployment; everything else is built and tested with mocked tool

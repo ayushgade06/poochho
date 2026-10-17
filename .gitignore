@@ -49,3 +49,5 @@ api*keys*.txt
 
 # downloaded datasets (e.g. the Kaggle medicine CSV) and anything derived from them
 data/raw/
+
+.vercel

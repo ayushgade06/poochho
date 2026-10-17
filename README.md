@@ -10,8 +10,8 @@ keep it aside. You hear the result in your language. India-first, consent-first,
 says it is an AI in its first sentence, unknowns stay unknown, and no LLM ranks anything.
 
 **Try it:** open the app and press **Find for me** (SIMULATED: scripted calls to fictional shops), play the **Replay**,
-or choose **Judge** to play a shopkeeper yourself in the browser (needs a microphone). Live link and video: added
-after deployment.
+or choose **Judge** to play a shopkeeper yourself in the browser (needs a microphone). **Live: <https://poochho.vercel.app>**. Video: added
+after recording.
 
 You say what you need in one sentence ("2 packet Amul Butter, Kothrud, Pune"), check the details it understood, and
 review exactly which shops will be called. Poochho calls them at the same time, ranks the verified answers, gives a
@@ -282,7 +282,10 @@ Rules:
 2. `vercel.json` pins functions to `icn1` (Seoul), next to the Supabase database (ap-northeast-2).
 3. Set the Bolna webhook to `https://<deployment>/api/bolna/webhook` with the `x-poochho-secret` header, and add
    the `report_availability` tool pointing at `https://<deployment>/api/bolna/tool` (docs/bolna-setup.md §6).
-4. Keep `LIVE_CALLS_ENABLED=false` on any public deployment unless you are running a supervised live test.
+4. `LIVE_CALLS_ENABLED` is the master switch for real calls. Production (<https://poochho.vercel.app>, deployed
+   2026-10-17) runs with it **on** at the owner's request; every live search still needs the operator token,
+   consenting shops, the 09:00–20:00 IST window and the daily cap. Set it to `false` in Vercel and redeploy to stop
+   all real calls.
 
 ## Troubleshooting
 
