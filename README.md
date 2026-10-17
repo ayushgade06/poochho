@@ -23,6 +23,17 @@ with that, price second. Every answer shows the shopkeeper's own words (checked 
 transcript, never paraphrased), how fresh it is ("confirmed 6 min ago"), and what the calls cost (from Bolna's own
 per-call charge). The operator can play back the recording of a real call.
 
+**Medicine mode.** For a pharmacy request Poochho looks the medicine up (A-Z Medicine Dataset of India, Kaggle,
+CC BY-SA 4.0, prices and discontinued flags as of Nov 2022) and shows its composition, e.g. "Paracetamol 650 mg ·
+tablet", for you to confirm. If you tick *If they don't have this brand, ask for the same composition*, a chemist
+without the brand is asked once whether they have another brand with exactly that salt, strength and form. Those
+answers appear in a separate **Same composition available** block, never as the best match, with "Same composition —
+not medical advice. If your prescription names a brand, ask your doctor before switching." Poochho never names or
+suggests a medicine, and never asks at all for narrow-therapeutic-index drugs, insulins and other biologics,
+inhalers, Schedule X drugs or multi-salt products (`lib/medicine.ts`): those show "We don't look for alternatives for
+this medicine — ask your doctor." The dataset is never committed: download it into `data/raw/` and run
+`npm run seed:medicines`.
+
 Built for the Bolna Buildathon. Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, Supabase Postgres + Realtime,
 Bolna, optional Sarvam speech. **No LLM decides anything**: validation, ranking, explanations and summaries are
 deterministic code. The voice calls and post-call extraction run on Bolna.
@@ -166,7 +177,7 @@ SIMULATED and REPLAY work with only the Supabase variables. To enable LIVE calls
 
 ## Database
 
-Seven migrations in `supabase/migrations/`:
+Eight migrations in `supabase/migrations/`:
 
 - **`20261016000000_init.sql`**: 5 tables, RLS, grants, triggers.
 - **`20261016010000_claim_live_calls.sql`**: the atomic dispatch function.
@@ -179,6 +190,8 @@ Seven migrations in `supabase/migrations/`:
   `search_requests.stop_when_found`, and `tool` as a `call_events` source.
 - **`20261017010000_judge_mode.sql`**: the `judge` mode and shop source, and `usage_counters` with
   `bump_usage()` for the daily caps.
+- **`20261017020000_medicines.sql`**: the `medicines` table (closed to the browser; a `pg_trgm` name index),
+  `search_medicines()` for `GET /api/medicines`, and `search_requests.composition` / `ask_alternative`.
 
 Tables:
 
@@ -253,13 +266,14 @@ Rules:
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
-| `npm test` | 90 unit tests (validation, extraction and the quote check, mid-call reports, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook, tool, recording, web-call and voice routes with mocked dependencies) |
-| `npm run test:integration` | 21 tests on the real Supabase. Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Simulated lines, answers heard mid-call and skipped calls. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, stop once found, judge mode's one-time browser session, the daily-cap counter, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
+| `npm test` | 106 unit tests (medicine exclusions and dataset parsing, the simulated pharmacy run, validation, extraction and the quote check, mid-call reports, state machine, ranking, summaries, voice parsing, metrics/CSV and cost, call languages and greetings, Bolna payload parsing, webhook, tool, recording, web-call and voice routes with mocked dependencies) |
+| `npm run test:integration` | 22 tests on the real Supabase (incl. medicine mode: the composition comes from the table, excluded medicines are never asked about). Persistence, concurrent ticks, duplicate and out-of-order events, opt-out trigger, holds, Realtime delivery, RLS denial. Simulated lines, answers heard mid-call and skipped calls. Against a **mocked** Bolna: LIVE dispatch, each shop's call language and greeting, stop once found, judge mode's one-time browser session, the daily-cap counter, concurrency under racing dispatchers, polling fallback, no auto-retry, kill switch, queue expiry, refused vs unconfirmed calls, webhook adoption, transcript redaction. No call is ever placed |
 | `npm run typecheck`, `npm run lint` | tsc and eslint |
 | `npm run check:secrets` | After `build`: fails if a server secret appears in the browser bundle or in tracked files |
 | `npm run seed:shops` | Upserts consenting test shops from `data/shops.local.json` (gitignored) |
+| `npm run seed:medicines` | Loads the Kaggle A-Z Medicine Dataset of India CSV from `data/raw/` (gitignored) into `medicines`: single-salt products on sale, with strength and form. Re-runnable |
 | `npm run replay:export -- <search_id> ["Title"]` | Saves a finished run as a sanitised replay in `data/replays.json` |
-| `npm run bolna -- check \| setup-extractions --yes \| test-extraction` | Bolna account check, extraction setup (creates only the ones missing from the agent), and an extraction test without a call |
+| `npm run bolna -- check \| setup-extractions --yes \| test-extraction [pharmacy]` | Bolna account check, extraction setup (creates only the ones missing from the agent), and an extraction test without a call |
 
 ## Deploy (Vercel)
 

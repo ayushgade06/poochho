@@ -48,7 +48,9 @@ ranked ledger, Hold it, and the summary heard back in your language.
 
 ## 5. Market entry (2:05–2:20)
 
-- **Start with medicines**: urgent, often out of stock, bought locally. AIOCD says it represents **about 12.4 lakh
+- **Start with medicines**: urgent, often out of stock, bought locally. Medicine mode already confirms the
+  composition from a public dataset and, if you allow it, asks for the same salt under another brand, without ever
+  recommending one (and never for thyroid drugs, insulins, inhalers or Schedule X). AIOCD says it represents **about 12.4 lakh
   chemists and drug distributors** (ETV Bharat, 13 May 2026).
 - **Then kiranas**: India's general trade, **over 1.4 crore kirana stores, accounts for nearly 75–80% of FMCG
   sales** (PIB, DPIIT/ONDC roundtable, 12 Jun 2026).

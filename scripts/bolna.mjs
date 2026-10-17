@@ -34,7 +34,7 @@ if (cmd === 'check') {
   const agent = await api(`/v2/agent/${AGENT}`)
   const text = JSON.stringify(agent)
   console.log(`Agent: ${agent.agent_name} · status ${agent.agent_status}`)
-  for (const v of ['shop_name', 'item', 'quantity', 'customer_area']) console.log(`  prompt uses {${v}}: ${text.includes(v) ? 'yes' : 'NO'}`)
+  for (const v of ['shop_name', 'item', 'quantity', 'customer_area', 'alternative']) console.log(`  prompt uses {${v}}: ${text.includes(v) ? 'yes' : 'NO'}`)
   console.log(`  prompt uses {call_purpose}: ${text.includes('call_purpose') ? 'yes' : 'no (a "Hold it" call will sound like a quote call; see docs/bolna-setup.md §5)'}`)
   // The welcome message is {greeting}: Poochho sends each call's greeting in that call's language.
   const greetings = agent.agent_welcome_message?.includes('{greeting}') ? Object.values(callLangs).map((l) => l.greeting) : [agent.agent_welcome_message ?? '']
@@ -80,6 +80,23 @@ if (cmd === 'check') {
   }
   const r = await api('/dispositions/bulk', { method: 'POST', body: JSON.stringify({ agent_id: AGENT, dispositions: missing.map((d) => ({ ...d, category: spec.category })) }) })
   console.log(`Created ${r.ids?.length ?? 0} extraction(s): ${missing.map((d) => d.name).join(', ')}.`)
+} else if (cmd === 'test-extraction' && flag === 'pharmacy') {
+  // Medicine mode: the brand is out of stock, the shop has the same composition under another brand.
+  const transcript = [
+    'assistant: नमस्ते, मैं पूछो की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ. यह call record हो रही है.',
+    'user: हाँ, बोलिए.',
+    'assistant: Kothrud के एक customer को Dolo 650 चाहिए, 1 strip. क्या यह आपके पास stock में है?',
+    'user: Dolo तो अभी खत्म है.',
+    'assistant: क्या आपके पास इसी salt का कोई दूसरा brand है — Paracetamol 650 mg tablet?',
+    'user: हाँ, Calpol 650 है.',
+    'assistant: इसकी price क्या है?',
+    'user: एक strip का तीस रुपये.',
+    'assistant: यह कितने minute में ready हो जाएगा?',
+    'user: अभी दे देंगे, ready है.',
+  ].join('\n')
+  const r = await api(`/v2/agent/${AGENT}/dispositions/test`, { method: 'POST', body: JSON.stringify({ transcript, call_date: new Date().toISOString().slice(0, 19) }) })
+  console.log(JSON.stringify(r.extracted_data ?? r, null, 2))
+  console.log('Expected: in_stock no, alt_available yes, alt_brand "Calpol 650", alt_price_inr 30, ready_in_minutes 0, stock_quote "Dolo तो अभी खत्म है".')
 } else if (cmd === 'test-extraction') {
   const transcript = [
     'assistant: नमस्ते, क्या आप Sharma Kirana Store से हैं? मैं Poochho की AI assistant हूँ, एक customer की तरफ से call कर रही हूँ जो Kothrud से हैं.',

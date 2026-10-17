@@ -29,7 +29,7 @@ extractions are missing, and how many phone numbers the account has.
 
 Poochho reads Bolna's post-call extractions from `extracted_data`. That object is nested as
 Category → extraction name → `{ objective, subjective, confidence_label }`. Create one category,
-**Shop Quote**, with the 12 extractions in [`data/bolna-extractions.json`](../data/bolna-extractions.json).
+**Shop Quote**, with the 15 extractions in [`data/bolna-extractions.json`](../data/bolna-extractions.json).
 
 **Option A, one command** (uses `POST /dispositions/bulk`, which is atomic: all or nothing):
 

@@ -1,6 +1,6 @@
 import { qtyLabel, rankResults, type Ranked } from './rank'
 import { notNeeded } from './state'
-import { CALL_LANGS, type Lang, type PublicExecution, type SearchRequest, type SearchState } from './types'
+import { CALL_LANGS, type Extraction, type Lang, type PublicExecution, type SearchRequest, type SearchState } from './types'
 
 type Req = Pick<SearchRequest, 'product' | 'quantity' | 'unit' | 'area'>
 export type HoldOutcome = 'confirmed' | 'declined' | 'pending' | 'failed' | 'unknown'
@@ -15,8 +15,9 @@ export function holdOutcome(h: Pick<PublicExecution, 'status' | 'extracted'>): H
 const money = (n: number) => String(Math.round(n * 100) / 100)
 
 // Spoken/visible summary in the user's language. Every number comes from a verified, extracted answer.
-// Availability first (has it, how soon, can they keep it), then the price.
-export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = null) {
+// Availability first (has it, how soon, can they keep it), then the price. `alts`: shops with the same composition
+// under another brand (medicines), mentioned neutrally, never as the answer.
+export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = null, alts: string[] = []) {
   const skipped = ranked.filter((r) => r.skipped).length // not dialled: a shop already had it all and will hold it
   const called = ranked.length - skipped
   const answered = ranked.filter((r) => r.status === 'done').length
@@ -31,6 +32,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
     const out = [`मैंने ${called} ${called === 1 ? 'दुकान' : 'दुकानों'} पर call किया। ${answered} ने जवाब दिया, और ${have} के पास ${req.product} है।`]
     if (w) out.push(`सबसे अच्छा विकल्प: ${w.shopName}, उनके पास पूरे ${qty} हैं${ready(w.ready, true)}${canHold ? ', और वे इसे आपके लिए रख सकते हैं' : ''}। ${w.total !== null ? `कुल कीमत ${money(w.total)} रुपये।` : 'कीमत नहीं बताई।'}`)
     else out.push(`किसी भी दुकान ने पूरे ${qty} की पुष्टि नहीं की।`)
+    if (alts.length) out.push(`${alts.join(', ')} के पास इसी composition का दूसरा brand है; बदलने से पहले अपने doctor से पूछें।`)
     if (unanswered) out.push(`${unanswered} ${unanswered === 1 ? 'दुकान' : 'दुकानों'} से बात नहीं हो पाई।`)
     if (skipped) out.push(`सामान मिल गया था, इसलिए ${skipped} और ${skipped === 1 ? 'दुकान' : 'दुकानों'} को call नहीं किया।`)
     if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} ने आपके लिए सामान रखने की पुष्टि की है।`)
@@ -41,6 +43,7 @@ export function summarize(req: Req, ranked: Ranked[], lang: Lang, hold: Hold = n
   const out = [`I called ${called} shop${called === 1 ? '' : 's'}. ${answered} answered and ${have} ${have === 1 ? 'has' : 'have'} ${req.product}.`]
   if (w) out.push(`Best option: ${w.shopName} has all ${qty}${ready(w.ready, false)}${canHold ? ', and says it can keep it for you' : ''}. ${w.total !== null ? `Price: ${money(w.total)} rupees in total.` : 'Price not quoted.'}`)
   else out.push(`No shop confirmed all ${qty}.`)
+  if (alts.length) out.push(`${alts.join(', ')} ${alts.length === 1 ? 'has' : 'have'} another brand with the same composition; ask your doctor before switching.`)
   if (unanswered) out.push(`${unanswered} shop${unanswered === 1 ? '' : 's'} could not be reached.`)
   if (skipped) out.push(`It was already found, so ${skipped} more shop${skipped === 1 ? ' was' : 's were'} not called.`)
   if (hold?.outcome === 'confirmed') out.push(`${hold.shopName} confirmed they will keep it for you.`)
@@ -55,8 +58,17 @@ export function searchSummary(s: SearchState, lang: Lang = s.request.language) {
   const w = ranked.find((r) => r.winner)
   const shopId = w && quotes.find((e) => e.id === w.id)?.shop_id
   const h = shopId ? s.executions.find((e) => e.kind === 'hold' && e.shop_id === shopId) : undefined
-  return summarize(s.request, ranked, lang, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null)
+  return summarize(s.request, ranked, lang, w && h ? { shopName: w.shopName, outcome: holdOutcome(h) } : null, alternatives(s, ranked).map((a) => a.r.shopName))
 }
+
+// Medicines: shops without the full requested brand that said they have the same composition under another brand.
+// Only when the user asked for it; never ranked against the requested brand.
+export const alternatives = (s: SearchState, ranked: Ranked[]) =>
+  !s.request.ask_alternative ? []
+  : ranked.flatMap((r) => {
+      const x = s.executions.find((e) => e.id === r.id)?.extracted
+      return r.status === 'done' && r.stock !== 'full' && x?.alt_available === 'yes' ? [{ r, x: x as Extraction }] : []
+    })
 
 // The languages a search's shops were called in, e.g. "हिन्दी, मराठी" (older calls: the request's language).
 export const calledIn = (s: SearchState) =>

@@ -27,6 +27,12 @@ banner says so honestly.
 | 1:05–1:20 | Best-match card, **Hold it**, **Yes** | "One tap places a second, separate call asking Sharma Kirana to keep it aside. It only says *reserved* if the shop actually agrees on that call." Wait for **Reservation confirmed by the shop**. |
 | 1:20–1:30 | Point at the line above the summary (**Asked in தமிழ் → shops called in हिन्दी, मराठी → summary in தமிழ்**), the **time-saved** strip and the cost line, pick **मराठी** (or the judge's language), **Hear the summary**, point at WhatsApp | "Patil Provision speaks Marathi, so Poochho called it in Marathi. Measured from this run: all calls together took X, one by one would take Y, and the whole search cost ₹Z in call charges. And the answer comes back in your language: eleven Indian languages through Sarvam. **You ask once. Poochho asks everyone.**" (A simulated run says it used no credits; quote ₹Z only from a real run or its replay.) |
 
+**Medicine beat (optional, 15 s).** Simulated: type "Dolo 650, 1 strip, Kothrud, Pune", confirm the composition
+("Paracetamol 650 mg · tablet") and tick *ask for the same composition*. Say: "If the chemist is out of Dolo, the
+assistant asks once for the same salt under another brand. That answer never becomes the best match and always
+says: ask your doctor before switching. For thyroid drugs, insulin or inhalers it never asks at all." Point at
+**Same composition available**. (Needs the medicine dataset loaded: `npm run seed:medicines`.)
+
 **For the interview: judge mode.** Choose **Judge**, type the request, start, and let the judge tap **Answer the
 call** on the "Your shop" card and play the shopkeeper in their own browser (microphone needed). Their answers are
 extracted and ranked against two simulated shops while they watch. Rehearse once: allow the microphone, use

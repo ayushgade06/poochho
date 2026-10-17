@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { CALL_LANGS, callLanguage, CATEGORIES, LANGS, UNITS, VOICE_LANGS, type Lang, type VoiceLang } from '@/lib/types'
+import { MEDICINE_CREDIT, NO_ALTERNATIVES, type Medicine } from '@/lib/medicine'
 import { qtyLabel } from '@/lib/rank'
 import { parseSentence } from '@/lib/voice'
 import { field, label, ModeBanner, token } from './ui'
@@ -15,6 +16,7 @@ type Config = {
   replays: { id: string; title: string; source: 'live' | 'simulated'; recorded_at: string }[]
 }
 type ShopOption = { id: string; name: string; area: string; language: string; callable: boolean; note: string }
+type Med = Medicine & { allowed: boolean }
 type Mode = 'simulated' | 'live' | 'replay' | 'judge'
 // Judge mode's simulated shops: ones that don't settle the search before the judge answers.
 const JUDGE_PICKS = ['demo-gupta-general', 'demo-patil-provision']
@@ -42,6 +44,28 @@ export default function SearchForm() {
   const [understood, setUnderstood] = useState('') // the sentence the fields were last filled from
   const [details, setDetails] = useState(false)
   const [parsing, setParsing] = useState(false)
+  // Pharmacy: the medicine's composition, looked up on the server, for the user to confirm.
+  const [meds, setMeds] = useState<{ q: string; list: Med[] } | null>(null)
+  const [medPick, setMedPick] = useState<number | 'none' | null>(null)
+  const [askAlt, setAskAlt] = useState(false)
+  const medQ = f.category === 'pharmacy' && mode !== 'replay' ? f.product.trim() : ''
+  const medList = meds?.q === medQ ? meds.list : null
+  const med = medPick === 'none' ? null : (medList?.find((m) => m.id === medPick) ?? medList?.[0] ?? null)
+
+  useEffect(() => {
+    if (medQ.length < 3) return
+    const ctl = new AbortController() // a slower, older lookup must never overwrite a newer one
+    const t = setTimeout(() => {
+      fetch(`/api/medicines?q=${encodeURIComponent(medQ)}`, { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : { medicines: [] }))
+        .then((d) => setMeds({ q: medQ, list: d.medicines ?? [] }))
+        .catch(() => !ctl.signal.aborted && setMeds({ q: medQ, list: [] }))
+    }, 300)
+    return () => {
+      clearTimeout(t)
+      ctl.abort()
+    }
+  }, [medQ])
 
   useEffect(() => {
     fetch('/api/config').then((r) => r.json()).then(setConfig).catch(() => setFail('Could not load settings.'))
@@ -89,7 +113,7 @@ export default function SearchForm() {
     const body =
       mode === 'replay'
         ? { mode, replay_id: replayId }
-        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null, asked_in: heard?.lang ?? null, stop_when_found: stopWhenFound }
+        : { ...f, mode, shop_ids: picked, confirm_live: mode === 'live' ? consent : undefined, max_budget_inr: f.max_budget_inr || null, need_within_minutes: f.need_within_minutes || null, asked_in: heard?.lang ?? null, stop_when_found: stopWhenFound, medicine_id: med?.id ?? null, ask_alternative: !!(med?.allowed && askAlt) }
     if (mode === 'live') token.set(op)
     try {
       const r = await fetch('/api/searches', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(mode === 'live' ? { 'x-admin-token': op } : {}) }, body: JSON.stringify(body) })
@@ -226,6 +250,43 @@ export default function SearchForm() {
                 <li className="self-center text-sm text-muted">· calls in {CALL_LANGS[f.language].name} unless a shop speaks another language</li>
               </ul>
             )}
+            {medList && medQ.length >= 3 && (
+              <div className="col-span-6 rounded-xl border border-line bg-white p-3 text-sm">
+                {!medList.length ? (
+                  <p className="text-muted">No composition found for &ldquo;{medQ}&rdquo;, so the shops are asked for this name only.</p>
+                ) : (
+                  <>
+                    <label htmlFor="med" className="font-semibold">
+                      Which medicine?
+                    </label>
+                    <select id="med" className={`${field} mt-1`} value={med?.id ?? 'none'} onChange={(e) => setMedPick(e.target.value === 'none' ? 'none' : Number(e.target.value))}>
+                      {medList.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                      <option value="none">None of these</option>
+                    </select>
+                    {med && (
+                      <>
+                        <p className="mt-2">
+                          Composition: <strong>{[med.composition, med.strength].filter(Boolean).join(' ')}{med.form && ` · ${med.form}`}</strong>
+                        </p>
+                        {med.allowed ? (
+                          <label className="mt-2 flex items-start gap-2">
+                            <input type="checkbox" className="mt-0.5 size-4 accent-ink" checked={askAlt} onChange={(e) => setAskAlt(e.target.checked)} />
+                            <span>If they don&apos;t have this brand, ask for the same composition</span>
+                          </label>
+                        ) : (
+                          <p className="mt-2 font-semibold text-chili">{NO_ALTERNATIVES}</p>
+                        )}
+                      </>
+                    )}
+                    <p className="mt-2 text-xs text-muted">{MEDICINE_CREDIT}</p>
+                  </>
+                )}
+              </div>
+            )}
             <button type="button" className="col-span-6 justify-self-start text-left text-sm font-semibold text-indigo underline-offset-2 hover:underline" onClick={() => setDetails(!details)} aria-expanded={details}>
               {details ? 'Hide details' : 'Edit details: product, quantity, place, budget, deadline, notes'}
             </button>
@@ -319,6 +380,12 @@ export default function SearchForm() {
           {f.need_within_minutes && ` · ready within ${f.need_within_minutes} min`}
           {f.max_budget_inr && ` · up to ₹${f.max_budget_inr}`}
         </p>
+        {med && (
+          <p className="mt-1 text-sm text-muted">
+            Composition: {[med.composition, med.strength, med.form].filter(Boolean).join(' ')}
+            {med.allowed && askAlt ? ' · if out of stock, they are asked for the same composition under another brand' : ''}
+          </p>
+        )}
       </div>
       <fieldset>
         <legend className="mb-2 font-semibold">

@@ -1,6 +1,6 @@
 import type { Extraction, LiveAnswer } from './types'
 
-const FIELDS = ['in_stock', 'unit_price_inr', 'total_price_inr', 'price_unit', 'qty_available', 'brand_or_variant', 'pickup_or_delivery', 'ready_in_minutes', 'can_hold', 'opt_out', 'notes', 'stock_quote', 'confidence']
+const FIELDS = ['in_stock', 'unit_price_inr', 'total_price_inr', 'price_unit', 'qty_available', 'brand_or_variant', 'pickup_or_delivery', 'ready_in_minutes', 'can_hold', 'opt_out', 'notes', 'stock_quote', 'confidence', 'alt_available', 'alt_brand', 'alt_price_inr']
 const key = (k: string) => k.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')
 
 // Parses Bolna's extracted_data (Category → Extraction name → { objective, subjective, confidence_label }), and also
@@ -63,6 +63,7 @@ export function parseExtraction(raw: unknown): Extraction | null {
     return label === 'high' ? 'high' : label === 'medium' || label === 'med' ? 'med' : label === 'low' ? 'low' : null
   }
 
+  const alt = pick('alt_available', ['yes', 'no', 'unknown'], 'unknown')
   const x: Extraction = {
     in_stock: pick('in_stock', ['yes', 'no', 'partial', 'unsure'], 'unsure'),
     unit_price_inr: number('unit_price_inr', 10_000_000, false, PRICE_MIN),
@@ -77,6 +78,10 @@ export function parseExtraction(raw: unknown): Extraction | null {
     confidence: 'low',
     notes: str('notes', 300),
     stock_quote: str('stock_quote', 300),
+    // Another brand's name and price only count if the shop said it has one.
+    alt_available: alt,
+    alt_brand: alt === 'yes' ? str('alt_brand', 80) : null,
+    alt_price_inr: alt === 'yes' ? number('alt_price_inr', 10_000_000, false, PRICE_MIN) : null,
   }
   // Explicit confidence field if configured; otherwise the weakest provider confidence among the answers that
   // drive ranking (availability and the quoted price). No signal at all means "low".

@@ -11,11 +11,13 @@ type Sim = {
   confidence?: 'high' | 'med' | 'low'
   ringMs: number
   talkMs?: number
+  alt?: { brand: string; priceFactor: number; ready: number } // medicines: has the same composition under this brand
+  pharmacy?: Partial<Omit<Sim, 'pharmacy'>> // how the shop answers pharmacy requests instead
 }
 export type DemoShop = { id: string; name: string; area: string; language: string; sim: Sim }
 export const DEMO_SHOPS = demo as DemoShop[]
 
-type Req = Pick<SearchRequest, 'product' | 'brand_or_variant' | 'category' | 'quantity' | 'unit' | 'area'>
+type Req = Pick<SearchRequest, 'product' | 'brand_or_variant' | 'category' | 'quantity' | 'unit' | 'area'> & Partial<Pick<SearchRequest, 'composition' | 'ask_alternative'>>
 
 // Simulated calls run SIM_LINES at a time, like a real account's concurrency limit (2 on a Bolna trial), so the
 // "stop calling once found" skip is visible in demos.
@@ -58,6 +60,11 @@ const LINES = {
     reserve: (item: string) => `थोड़ी देर पहले हमने आपसे ${item} के बारे में पूछा था. Customer इसे लेना चाहते हैं, क्या आप इसे उनके लिए रख देंगे?`,
     reserved: 'हाँ, रख दिया. आ जाइए.',
     unsure: 'अभी पक्का नहीं बोल सकते, आके देख लीजिए.',
+    altAsk: (alt: string) => `क्या आपके पास इसी salt का कोई दूसरा brand है — ${alt}?`,
+    altYes: (brand: string) => `हाँ, ${brand} company का है.`,
+    altNo: 'नहीं, वो भी नहीं है.',
+    readyAsk: 'यह कितने minute में ready हो जाएगा?',
+    readyIn: (m: number) => `${m} मिनट में ready हो जाएगा.`,
   },
   en: {
     yes: 'Yes, go ahead.',
@@ -78,6 +85,11 @@ const LINES = {
     reserve: (item: string) => `A little while ago we asked you about ${item}. The customer wants to buy it. Could you keep it for them?`,
     reserved: 'Yes, it is kept aside. Please come.',
     unsure: 'I cannot promise right now, please come and check.',
+    altAsk: (alt: string) => `Do you have another brand with the same salt — ${alt}?`,
+    altYes: (brand: string) => `Yes, we have one from ${brand}.`,
+    altNo: 'No, we do not have that either.',
+    readyAsk: 'How many minutes until it is ready?',
+    readyIn: (m: number) => `It will be ready in ${m} minutes.`,
   },
   // Marathi: written by the developer, needs a native speaker's review (BUILD_REPORT §9).
   mr: {
@@ -99,13 +111,18 @@ const LINES = {
     reserve: (item: string) => `थोड्या वेळापूर्वी आम्ही तुम्हाला ${item} बद्दल विचारले होते. Customer ला ते घ्यायचे आहे, तुम्ही ते त्यांच्यासाठी ठेवाल का?`,
     reserved: 'हो, ठेवले आहे. या.',
     unsure: 'आत्ता नक्की सांगू शकत नाही, येऊन बघा.',
+    altAsk: (alt: string) => `तुमच्याकडे याच salt चा दुसरा कोणता brand आहे का — ${alt}?`,
+    altYes: (brand: string) => `हो, ${brand} company चा आहे.`,
+    altNo: 'नाही, ते पण नाही.',
+    readyAsk: 'हे किती minute मध्ये ready होईल?',
+    readyIn: (m: number) => `${m} मिनिटांत ready होईल.`,
   },
 }
 const lines = (lang: string) => ({ ...LINES[(lang in LINES ? lang : 'hi') as keyof typeof LINES], greeting: CALL_LANGS[lang]?.greeting ?? CALL_LANGS.hi.greeting })
 
 // Bolna-shaped disposition results: Category → name → { objective, subjective, confidence_label }.
 function extraction(fields: Record<string, string | null>, confidence: 'high' | 'med' | 'low') {
-  const objective = ['in_stock', 'can_hold', 'pickup_or_delivery', 'opt_out']
+  const objective = ['in_stock', 'can_hold', 'pickup_or_delivery', 'opt_out', 'alt_available']
   return {
     'Shop Quote': Object.fromEntries(
       Object.entries(fields).map(([k, v]) => [k, objective.includes(k) ? { objective: v, subjective: '', confidence_label: LABEL[confidence] } : { objective: null, subjective: v ?? '', confidence_label: LABEL[confidence] }]),
@@ -137,7 +154,7 @@ function timeline(id: string, s: Sim, final: { transcript: string; extracted_dat
 
 // `lang` is the language the call is placed in (callLanguage in lib/types.ts).
 export function quoteScript(shop: DemoShop, req: Req, lang: string, providerId: string): ScriptEvent[] {
-  const s = shop.sim
+  const s: Sim = { ...shop.sim, ...(req.category === 'pharmacy' ? shop.sim.pharmacy : {}) }
   if (s.outcome !== 'quote') return timeline(providerId, s, null)
   const L = lines(lang)
   const item = itemLabel(req)
@@ -149,9 +166,20 @@ export function quoteScript(shop: DemoShop, req: Req, lang: string, providerId: 
   const live: Live = []
   // stock_quote is the shopkeeper's availability line, verbatim, as Bolna's extraction is asked to return it.
   if (stock === 'no') {
-    t.push([false, L.none], [true, L.sorry])
+    t.push([false, L.none])
     f.stock_quote = L.none
     live.push([0.5, { in_stock: 'no' }])
+    // Medicines: asked once for the same composition under another brand (the prompt's Section 3, Question 2).
+    const alt = req.ask_alternative && req.composition
+    if (!alt) t.push([true, L.sorry])
+    else if (!s.alt) {
+      t.push([true, L.altAsk(alt)], [false, L.altNo], [true, L.sorry])
+      f.alt_available = 'no'
+    } else {
+      const total = round5(simUnitPrice(req.product, req.category) * s.alt.priceFactor) * req.quantity
+      t.push([true, L.altAsk(alt)], [false, L.altYes(s.alt.brand)], [true, L.price], [false, L.total(q, total)], [true, L.readyAsk], [false, L.readyIn(s.alt.ready)], [true, L.bye])
+      Object.assign(f, { alt_available: 'yes', alt_brand: s.alt.brand, alt_price_inr: String(total), ready_in_minutes: String(s.alt.ready) })
+    }
   } else {
     f.stock_quote = stock === 'partial' ? L.some(s.qty ?? 1, req.unit) : L.have(q)
     t.push([false, f.stock_quote], [true, L.price])

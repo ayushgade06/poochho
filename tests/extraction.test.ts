@@ -121,7 +121,15 @@ describe('parseExtraction on a real Bolna response', () => {
     expect(parseExtraction(real)).toEqual({
       in_stock: 'yes', unit_price_inr: 270, total_price_inr: 540, price_unit: 'packet', qty_available: 2, brand_or_variant: 'Amul Butter 500g',
       pickup_or_delivery: 'pickup', ready_in_minutes: 10, can_hold: 'yes', opt_out: 'no', confidence: 'high', notes: null, stock_quote: 'हाँ है, दो packet मिल जाएगा',
+      alt_available: 'unknown', alt_brand: null, alt_price_inr: null, // recorded before medicine mode
     })
+  })
+
+  it('reads another brand with the same composition only when the shop said it has one', () => {
+    const alt = (available: string) => parseExtraction({ 'Shop Quote': { in_stock: { objective: 'no' }, alt_available: { objective: available }, alt_brand: { subjective: 'Sanjivani' }, alt_price_inr: { subjective: '25.0' } } })
+    expect(alt('yes')).toMatchObject({ in_stock: 'no', alt_available: 'yes', alt_brand: 'Sanjivani', alt_price_inr: 25 })
+    expect(alt('no')).toMatchObject({ alt_available: 'no', alt_brand: null, alt_price_inr: null })
+    expect(alt('maybe')).toMatchObject({ alt_available: 'unknown', alt_brand: null, alt_price_inr: null })
   })
 
   it("returns a quote that passes the transcript check: the shopkeeper's line in the sample was copied verbatim", () => {

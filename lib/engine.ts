@@ -4,6 +4,7 @@ import replays from '@/data/replays.json'
 import { BolnaHttpError, createWebSession, getExecution, sanitize, startCall, stopCall, toEvent } from './bolna'
 import { cfg, clientIp, inCallingWindow, liveBlockers } from './config'
 import { quoteHeard } from './extraction'
+import { alternativesAllowed, compositionText, type Medicine } from './medicine'
 import { LABEL_FIELDS, type MetricRow } from './metrics'
 import { hasAndHolds } from './rank'
 import { DEMO_SHOPS, holdScript, itemLabel, quoteScript, SIM_LINES } from './sim'
@@ -73,7 +74,14 @@ async function assertLiveBudget(n: number) {
 
 // ---------- searches ----------
 export async function createSearch(input: NewSearch) {
-  const { shop_ids, ...fields } = input
+  const { shop_ids, medicine_id, ask_alternative, ...fields } = input
+  // A medicine's composition always comes from the medicines table, never from the browser: it is spoken on calls.
+  let medicine = {}
+  if (medicine_id !== null) {
+    const m = must<Medicine | null>(await db().from('medicines').select('id, name, composition, strength, form').eq('id', medicine_id).maybeSingle())
+    if (!m) throw new UserError('Unknown medicine.')
+    medicine = { composition: compositionText(m), ask_alternative: ask_alternative && alternativesAllowed(m) }
+  }
   const shopLang: Record<string, string> = {}
   if (input.mode === 'simulated' || input.mode === 'judge') {
     const picked = DEMO_SHOPS.filter((s) => shop_ids.includes(s.id))
@@ -88,7 +96,7 @@ export async function createSearch(input: NewSearch) {
     await assertLiveBudget(shop_ids.length)
     for (const s of rows) shopLang[s.id] = s.language
   }
-  const request = must<SearchRequest>(await db().from('search_requests').insert(fields).select('*').single())
+  const request = must<SearchRequest>(await db().from('search_requests').insert({ ...fields, ...medicine }).select('*').single())
   const now = new Date().toISOString()
   const rows: Record<string, unknown>[] = shop_ids.map((shopId, i) => {
     // Decided once, here, and stored: each shop is called in its own language when the agent speaks it.
@@ -206,7 +214,7 @@ export async function dispatchQueued() {
   if (!inCallingWindow()) return failQueued(`not placed: outside the calling window (${cfg.callWindow} IST)`)
   const claimed = must<Row[]>(await db().rpc('claim_live_calls', { max_active: cfg.maxConcurrency }))
   if (!claimed.length) return
-  const details = must<Row[]>(await db().from('call_executions').select(`id, request_id, kind, language, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language, stop_when_found)`).in('id', claimed.map((c) => c.id)))
+  const details = must<Row[]>(await db().from('call_executions').select(`id, request_id, kind, language, shops(${SHOP_COLS}), search_requests(product, brand_or_variant, quantity, unit, area, language, stop_when_found, composition, ask_alternative)`).in('id', claimed.map((c) => c.id)))
   for (const q of details) await dial(q).catch((e) => console.error('dial failed for', q.id, (e as Error).message))
 }
 
@@ -257,6 +265,9 @@ const callVars = (shopName: string, req: SearchRequest, kind: string, id: string
   quantity: `${req.quantity} ${req.unit}`,
   customer_area: req.area,
   call_purpose: kind === 'hold' ? 'hold' : 'quote',
+  // Medicines: the same composition, asked about once if the item is out of stock (prompt Section 3, Question 2).
+  // Empty unless the user asked for it and lib/medicine.ts allows it.
+  alternative: kind === 'quote' && req.ask_alternative && req.composition ? req.composition : '',
   poochho_execution_id: id, // echoed back in webhooks, so a call can be matched even if storing its id fails
 })
 
@@ -265,7 +276,7 @@ const callVars = (shopName: string, req: SearchRequest, kind: string, id: string
 // webhooks and polling update it through the same pipeline.
 export async function startWebCall(executionId: string, allowed: () => Promise<boolean>) {
   const claimed = must<Row[]>(
-    await db().from('call_executions').update({ status: 'dispatching', dispatched_at: new Date().toISOString() }).eq('id', executionId).eq('mode', 'judge').eq('status', 'queued').select('id, kind, language, shops(name), search_requests(product, brand_or_variant, quantity, unit, area, language)'),
+    await db().from('call_executions').update({ status: 'dispatching', dispatched_at: new Date().toISOString() }).eq('id', executionId).eq('mode', 'judge').eq('status', 'queued').select('id, kind, language, shops(name), search_requests(product, brand_or_variant, quantity, unit, area, language, composition, ask_alternative)'),
   )
   const q = claimed[0]
   if (!q) throw new UserError('This call has already started, or it is not a judge-mode call.')

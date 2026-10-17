@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { MEDICINE_CREDIT, SAME_COMPOSITION_NOTE } from '@/lib/medicine'
 import { centsToInr } from '@/lib/metrics'
 import { CONFIDENCE, inr, qtyLabel, WEIGHTS, winnerReason, type Ranked } from '@/lib/rank'
-import { calledIn, holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
+import { alternatives, calledIn, holdOutcome, searchSummary, shareText, timeSaved, type HoldOutcome } from '@/lib/summary'
 import { VOICE_LANGS, type PublicExecution, type SearchState, type VoiceLang } from '@/lib/types'
 import { Proof, speakText, token } from './ui'
 
@@ -45,6 +46,8 @@ export default function Results({ data, ranked, holds, finished, sarvam, now }: 
           </div>
         )
       )}
+
+      <Alternatives data={data} ranked={ranked} />
 
       {saved && saved.calls > 1 && saved.sequentialSec > saved.parallelSec && <TimeSaved {...saved} />}
       {finished && <Cost data={data} />}
@@ -88,6 +91,34 @@ function WinnerCard({ data, r, hold, why, now }: { data: SearchState; r: Ranked;
         </a>
       </div>
     </article>
+  )
+}
+
+// Medicines: the same composition under another brand, kept apart from the ranking. Never "best", never advice.
+function Alternatives({ data, ranked }: { data: SearchState; ranked: Ranked[] }) {
+  const req = data.request
+  const alts = alternatives(data, ranked)
+  if (!alts.length) return null
+  return (
+    <section className="rounded-2xl border-2 border-indigo/40 bg-indigo-soft/50 p-5 sm:p-6" aria-labelledby="alts">
+      <h3 id="alts" className="font-display text-2xl">
+        Same composition available
+      </h3>
+      <p className="mt-1 text-muted">
+        {req.composition} under another brand, at {alts.length === 1 ? 'a shop' : 'shops'} that didn&apos;t have {req.product}:
+      </p>
+      <ul className="mt-3 space-y-2">
+        {alts.map(({ r, x }) => (
+          <li key={r.id} className="rounded-xl bg-white px-4 py-3 tabular">
+            <span className="font-semibold">{r.shopName}</span> · {x.alt_brand ?? <i className="text-muted">brand not stated</i>} ·{' '}
+            {x.alt_price_inr != null ? `${inr(x.alt_price_inr)} for ${qtyLabel(req.quantity, req.unit)}` : <i className="text-muted">price not quoted</i>} ·{' '}
+            {x.ready_in_minutes == null ? <i className="text-muted">readiness not confirmed</i> : x.ready_in_minutes === 0 ? 'ready now' : `ready in ~${x.ready_in_minutes} min`}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 font-semibold">{SAME_COMPOSITION_NOTE}</p>
+      <p className="mt-1 text-xs text-muted">{MEDICINE_CREDIT}</p>
+    </section>
   )
 }
 
@@ -172,7 +203,7 @@ function Ledger({ data, ranked, holdFor, now }: { data: SearchState; ranked: Ran
                 <td className="px-3 py-3">{!answered ? muted(r.skipped ? 'not called' : 'not reached') : r.stock === 'full' ? <span className="text-kirana">✓ all {req.quantity}</span> : r.stock === 'short' ? <span className="text-marigold-deep">{x?.qty_available !== null && x?.qty_available !== undefined ? `only ${x.qty_available}` : 'partial'}</span> : r.stock === 'none' ? <span className="text-chili">✕ none</span> : muted('unclear')}</td>
                 <td className="px-3 py-3">{!x || r.stock === 'none' ? muted('—') : !r.comparable ? muted(`per ${x.price_unit}`) : r.unit !== null ? inr(r.unit) : x.unit_price_inr ? muted(`${inr(x.unit_price_inr)}, unit not stated`) : muted('not quoted')}</td>
                 <td className="px-3 py-3 font-semibold">{r.total !== null ? inr(r.total) : muted(r.stock === 'short' ? 'n/a (short)' : '—')}</td>
-                <td className="px-3 py-3">{x?.brand_or_variant ?? muted(x && r.stock !== 'none' ? 'not stated' : '—')}</td>
+                <td className="px-3 py-3">{x && r.stock !== 'none' ? (x.brand_or_variant ?? muted('not stated')) : muted('—')}</td>
                 <td className="px-3 py-3">{x && r.stock !== 'none' ? (x.pickup_or_delivery === 'unknown' ? muted('not discussed') : x.pickup_or_delivery) : muted('—')}</td>
                 <td className="px-3 py-3">{r.ready !== null ? (r.ready === 0 ? 'now' : `~${r.ready} min`) : muted(x && r.stock !== 'none' ? 'not confirmed' : '—')}</td>
                 <td className="px-3 py-3">{h ? <span className={OUTCOME[holdOutcome(h)][1]}>{holdOutcome(h)}</span> : x && r.stock !== 'none' ? (x.can_hold === 'yes' ? 'can hold' : x.can_hold === 'no' ? <span className="text-chili">can&apos;t</span> : muted('not confirmed')) : muted('—')}</td>

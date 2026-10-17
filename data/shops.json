@@ -4,7 +4,7 @@
     "name": "Sharma Kirana Store",
     "area": "Main Market",
     "language": "hi",
-    "sim": { "outcome": "quote", "stock": "yes", "priceFactor": 0.96, "ready": 10, "hold": "yes", "confidence": "high", "ringMs": 3200, "talkMs": 14000 }
+    "sim": { "outcome": "quote", "stock": "yes", "priceFactor": 0.96, "ready": 10, "hold": "yes", "confidence": "high", "ringMs": 3200, "talkMs": 14000, "pharmacy": { "stock": "no", "alt": { "brand": "Sanjivani", "priceFactor": 0.8, "ready": 10 } } }
   },
   {
     "id": "demo-gupta-general",
@@ -18,7 +18,7 @@
     "name": "Patil Provision",
     "area": "Shivaji Nagar",
     "language": "mr",
-    "sim": { "outcome": "quote", "stock": "partial", "qty": 1, "priceFactor": 0.9, "ready": 15, "hold": "yes", "confidence": "high", "ringMs": 2600, "talkMs": 15000 }
+    "sim": { "outcome": "quote", "stock": "partial", "qty": 1, "priceFactor": 0.9, "ready": 15, "hold": "yes", "confidence": "high", "ringMs": 2600, "talkMs": 15000, "pharmacy": { "stock": "no" } }
   },
   {
     "id": "demo-new-bharat",

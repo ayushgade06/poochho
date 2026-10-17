@@ -8,7 +8,7 @@ import { DEMO_SHOPS } from '@/lib/sim'
 
 const created: string[] = []
 const TEST_SHOP = 'zz-test-live-shop'
-const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true }
+const base = { mode: 'simulated' as const, product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, medicine_id: null, ask_alternative: false }
 const five = ['demo-sharma-kirana', 'demo-gupta-general', 'demo-patil-provision', 'demo-new-bharat', 'demo-mehta-general']
 
 // Make every scripted step due now, instead of waiting ~25 s of simulated call time.

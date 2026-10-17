@@ -70,7 +70,8 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     // ₹60,000). A quoted total for the full quantity is used as given and sets the unit price: it is what the
     // customer pays, and Bolna's extraction model has been seen back-calculating a unit price the shop never said.
     const quotedTotal = comparable && stock === 'full' ? positive(x?.total_price_inr) : null
-    const unit = quotedTotal !== null ? quotedTotal / q : unitMatch === true ? positive(x?.unit_price_inr) : null
+    // A shop without the item has no price for it (a price said on its call may be another brand's).
+    const unit = stock === 'none' ? null : quotedTotal !== null ? quotedTotal / q : unitMatch === true ? positive(x?.unit_price_inr) : null
     const total = stock === 'full' ? (quotedTotal ?? (unit !== null ? Math.round(unit * q * 100) / 100 : null)) : null
     return { r, x, stock, comparable, unitMatch, unit, total }
   })
@@ -102,7 +103,7 @@ export function rankResults(req: Req, rows: Input[]): Ranked[] {
     // With a budget or deadline set, an unknown price or readiness cannot count as meeting it.
     const overBudget = req.max_budget_inr !== null && total !== null && total > req.max_budget_inr
     const budgetUnknown = req.max_budget_inr !== null && total === null
-    const late = req.need_within_minutes !== null && x.ready_in_minutes !== null && x.ready_in_minutes > req.need_within_minutes
+    const late = stock !== 'none' && req.need_within_minutes !== null && x.ready_in_minutes !== null && x.ready_in_minutes > req.need_within_minutes
     const readyUnknown = req.need_within_minutes !== null && x.ready_in_minutes === null
     if (stock !== 'full') flags.push(stock === 'none' ? 'Not in stock' : stock === 'short' ? 'Cannot supply the full quantity' : 'Stock unclear')
     if (overBudget) flags.push(`Over your ${inr(req.max_budget_inr!)} budget`)

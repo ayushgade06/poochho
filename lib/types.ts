@@ -44,6 +44,11 @@ export type Extraction = {
   confidence: 'high' | 'med' | 'low'
   notes: string | null
   stock_quote: string | null // the shopkeeper's own words about availability; shown only if found in the transcript
+  // Medicines (M2): another brand with the same composition, asked about only when the requested one is out of stock.
+  // Never counts as having the requested item. Absent on answers recorded before medicine mode.
+  alt_available?: 'yes' | 'no' | 'unknown'
+  alt_brand?: string | null
+  alt_price_inr?: number | null // for the whole quantity
 }
 
 // What the agent reported mid-call through its report_availability tool: provisional, and only what was said.
@@ -66,6 +71,8 @@ export type SearchRequest = {
   constraints: string | null
   asked_in: VoiceLang | null // the language the user spoke the request in, if they spoke it (Sarvam-detected)
   stop_when_found: boolean // stop dialling once a shop confirms it has everything and will hold it
+  composition: string | null // pharmacy: the composition the user confirmed, e.g. "Paracetamol 650 mg tablet"
+  ask_alternative: boolean // ask for that composition under another brand if the requested one is out of stock
   replay_of: string | null
   created_at: string
 }

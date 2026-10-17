@@ -60,7 +60,7 @@ describe('LIVE orchestration against a mocked Bolna', () => {
     const s = (await getSearch(requestId, true))!
     expect(s.executions.filter((e) => e.status === 'dispatching').map((e) => e.provider_execution_id).sort()).toEqual(['mock-1', 'mock-2'])
     expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(2)
-    expect(started[0].body).toMatchObject({ agent_id: 'mock-agent', user_data: { item: 'Dolo 650', quantity: '2 strip', customer_area: 'Kothrud', call_purpose: 'quote', timezone: 'Asia/Kolkata' } })
+    expect(started[0].body).toMatchObject({ agent_id: 'mock-agent', user_data: { item: 'Dolo 650', quantity: '2 strip', customer_area: 'Kothrud', call_purpose: 'quote', alternative: '', timezone: 'Asia/Kolkata' } })
     expect(started[0].body).not.toHaveProperty('retry_config') // Bolna never retries on its own
     expect((started[0].body.user_data as Record<string, string>).poochho_execution_id).toMatch(/^[0-9a-f-]{36}$/)
   })
@@ -162,7 +162,7 @@ describe('call language (mocked Bolna)', () => {
     const now = new Date().toISOString()
     await db().from('shops').upsert(LANG_SHOPS.map((s, i) => ({ ...s, name: `Mock ${s.language} shop`, area: 'Test', source: 'live', phone: `+91000000002${i}`, consent_status: 'verified', consent_verified_at: now, opted_out_at: null })))
     const before = started.length
-    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: 'ta-IN', stop_when_found: true, shop_ids: LANG_SHOPS.map((s) => s.id) })
+    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: 'ta-IN', stop_when_found: true, medicine_id: null, ask_alternative: false, shop_ids: LANG_SHOPS.map((s) => s.id) })
     const calls = started.slice(before).map((c) => ({ to: c.to, lang: (c.body.agent_data as { language: string }).language, greeting: (c.body.user_data as Record<string, string>).greeting }))
     expect(calls).toHaveLength(2)
     expect(calls.find((c) => c.to.endsWith('20'))).toEqual({ to: '+910000000020', lang: 'mr', greeting: CALL_LANGS.mr.greeting })
@@ -185,7 +185,7 @@ describe('stop calling once found (mocked Bolna)', () => {
     await db().from('call_executions').update({ status: 'done' }).like('shop_id', 'zz-mock%').in('status', ['dispatching', 'ringing', 'talking']) // free the lines (test shops only)
     const now = new Date().toISOString()
     await db().from('shops').upsert(FOUND.map((id, i) => ({ id, name: `Found Shop ${i + 1}`, area: 'Test', source: 'live', phone: `+91000000003${i}`, consent_status: 'verified', consent_verified_at: now, opted_out_at: null })))
-    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 2, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, shop_ids: FOUND })
+    searchId = await createSearch({ mode: 'live', product: 'Dolo 650', brand_or_variant: null, category: 'pharmacy', quantity: 2, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, medicine_id: null, ask_alternative: false, shop_ids: FOUND })
     let s = (await getSearch(searchId, true))!
     const [first, second] = s.executions.filter((e) => e.status === 'dispatching')
     expect(s.executions.filter((e) => e.status === 'queued')).toHaveLength(1) // two lines on this account
@@ -205,6 +205,43 @@ describe('stop calling once found (mocked Bolna)', () => {
   })
 })
 
+describe('medicine mode (mocked Bolna)', () => {
+  // Made-up products: no dataset rows in tests.
+  const MEDS = [
+    { id: 999999201, name: 'Fevrol 650 Tablet', composition: 'Paracetamol', strength: '650 mg', form: 'tablet' },
+    { id: 999999202, name: 'Thyrol 50 Tablet', composition: 'Thyroxine', strength: '50 mcg', form: 'tablet' },
+  ]
+  const ids: string[] = []
+  beforeAll(async () => {
+    await db().from('medicines').upsert(MEDS)
+    await db().from('shops').upsert({ id: 'zz-med-a', name: 'Med Shop', area: 'Test', source: 'live', phone: '+910000000040', consent_status: 'verified', consent_verified_at: new Date().toISOString(), opted_out_at: null })
+  })
+  afterAll(async () => {
+    if (ids.length) await db().from('search_requests').delete().in('id', ids)
+    await db().from('medicines').delete().in('id', MEDS.map((m) => m.id))
+    await db().from('shops').delete().eq('id', 'zz-med-a')
+  })
+
+  it('asks for the same composition only when the user asked and the medicine allows it, in the words of the medicines table', async () => {
+    const base = { mode: 'live' as const, product: 'Fevrol 650', brand_or_variant: null, category: 'pharmacy', quantity: 1, unit: 'strip', city: 'Pune', area: 'Kothrud', language: 'hi' as const, max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: false, shop_ids: ['zz-med-a'] }
+    const cases = [
+      [999999201, true, 'Paracetamol 650 mg tablet', true, 'Paracetamol 650 mg tablet'], // allowed and asked for
+      [999999202, true, 'Thyroxine 50 mcg tablet', false, ''], // narrow therapeutic index: never
+      [999999201, false, 'Paracetamol 650 mg tablet', false, ''], // the user didn't ask
+    ] as const
+    for (const [medicine_id, ask, composition, stored, sent] of cases) {
+      await db().from('call_executions').update({ status: 'done' }).like('shop_id', 'zz-%').in('status', ['dispatching', 'ringing', 'talking']) // free the lines (test shops only)
+      const before = started.length
+      const id = await createSearch({ ...base, medicine_id, ask_alternative: ask })
+      ids.push(id)
+      expect((await getSearch(id, true))!.request).toMatchObject({ composition, ask_alternative: stored })
+      expect(started.length).toBe(before + 1)
+      expect((started.at(-1)!.body.user_data as Record<string, string>).alternative).toBe(sent)
+    }
+    await expect(createSearch({ ...base, medicine_id: 999999999, ask_alternative: true })).rejects.toThrow(UserError)
+  })
+})
+
 describe('judge mode (mocked Bolna web calls)', () => {
   let searchId = ''
   afterAll(async () => {
@@ -212,7 +249,7 @@ describe('judge mode (mocked Bolna web calls)', () => {
   })
 
   it("runs the judge's browser call through the same pipeline as a phone call, started once, only on request", async () => {
-    searchId = await createSearch({ mode: 'judge', product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'en', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, shop_ids: ['demo-gupta-general', 'demo-patil-provision'] })
+    searchId = await createSearch({ mode: 'judge', product: 'Amul Butter', brand_or_variant: '500g', category: 'grocery', quantity: 2, unit: 'packet', city: 'Pune', area: 'Kothrud', language: 'en', max_budget_inr: null, need_within_minutes: null, constraints: null, asked_in: null, stop_when_found: true, medicine_id: null, ask_alternative: false, shop_ids: ['demo-gupta-general', 'demo-patil-provision'] })
     let s = (await getSearch(searchId))!
     expect(s.request.mode).toBe('judge')
     expect(s.redacted).toBe(false) // like a simulated run: visible through the search's unguessable URL

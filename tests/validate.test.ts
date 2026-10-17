@@ -13,6 +13,16 @@ describe('validateSearch', () => {
     expect(validateSearch({ ...good, stop_when_found: 'no' }, 5).ok).toBe(false)
   })
 
+  it('takes a medicine only for pharmacy requests, and alternatives only with a medicine', () => {
+    const ok = validateSearch({ ...good, category: 'pharmacy', medicine_id: 42, ask_alternative: true }, 5)
+    expect(ok.ok && ok.value).toMatchObject({ medicine_id: 42, ask_alternative: true })
+    const none = validateSearch({ ...good, ask_alternative: true }, 5)
+    expect(none.ok && none.value).toMatchObject({ medicine_id: null, ask_alternative: false })
+    const bad = validateSearch({ ...good, category: 'grocery', medicine_id: 42, ask_alternative: 'yes' }, 5)
+    expect(!bad.ok && Object.keys(bad.errors).sort()).toEqual(['ask_alternative', 'medicine_id'])
+    expect(validateSearch({ ...good, category: 'pharmacy', medicine_id: 1.5 }, 5).ok).toBe(false)
+  })
+
   it('reports every missing required field', () => {
     const r = validateSearch({}, 5)
     expect(r.ok).toBe(false)

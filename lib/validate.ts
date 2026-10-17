@@ -15,6 +15,8 @@ export type NewSearch = {
   constraints: string | null
   asked_in: VoiceLang | null
   stop_when_found: boolean
+  medicine_id: number | null // pharmacy: the medicines row the user confirmed; the server reads its composition
+  ask_alternative: boolean // allowed only if lib/medicine.ts allows it for that medicine (createSearch)
   shop_ids: string[]
 }
 
@@ -63,6 +65,10 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
   const unit = oneOf('unit', UNITS, true)
   const language = oneOf('language', Object.keys(LANGS) as Lang[], true)
   if (b.stop_when_found !== undefined && typeof b.stop_when_found !== 'boolean') errors.stop_when_found = 'Must be true or false'
+  if (b.ask_alternative !== undefined && typeof b.ask_alternative !== 'boolean') errors.ask_alternative = 'Must be true or false'
+  const medicineId = num('medicine_id', 1, 2_147_483_647, false, true)
+  const category = oneOf('category', CATEGORIES)
+  if (medicineId !== null && category !== 'pharmacy') errors.medicine_id = 'Only for pharmacy requests'
   const shopIds = Array.isArray(b.shop_ids) ? [...new Set(b.shop_ids)] : []
   if (!shopIds.length) errors.shop_ids = 'Pick at least one shop'
   else if (shopIds.length > maxCalls) errors.shop_ids = `At most ${maxCalls} shops per search`
@@ -72,7 +78,7 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     mode: mode ?? 'simulated',
     product: product ?? '',
     brand_or_variant: text('brand_or_variant', 80),
-    category: oneOf('category', CATEGORIES),
+    category,
     quantity: quantity ?? 0,
     unit: unit ?? 'piece',
     city: text('city', 60, true) ?? '',
@@ -83,6 +89,8 @@ export function validateSearch(input: unknown, maxCalls: number): Result {
     constraints: text('constraints', 300),
     asked_in: oneOf('asked_in', Object.keys(VOICE_LANGS) as VoiceLang[]),
     stop_when_found: b.stop_when_found !== false, // on unless the user turned it off
+    medicine_id: medicineId,
+    ask_alternative: medicineId !== null && b.ask_alternative === true,
     shop_ids: shopIds as string[],
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value }

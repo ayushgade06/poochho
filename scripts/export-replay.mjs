@@ -64,7 +64,7 @@ for (const c of out) {
   const start = c.kind === 'quote' ? quoteStart : first([c])
   for (const e of c.events) e.at -= start
 }
-const keep = ['product', 'brand_or_variant', 'category', 'quantity', 'unit', 'city', 'area', 'language', 'max_budget_inr', 'need_within_minutes', 'constraints']
+const keep = ['product', 'brand_or_variant', 'category', 'quantity', 'unit', 'city', 'area', 'language', 'max_budget_inr', 'need_within_minutes', 'constraints', 'composition', 'ask_alternative']
 const replay = {
   id: `run-${id.slice(0, 8)}`,
   title: title ?? `${req.quantity} ${req.unit} ${req.product} near ${req.area} (${req.mode === 'live' ? 'real calls' : 'simulated'})`,

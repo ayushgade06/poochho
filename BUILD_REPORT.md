@@ -301,6 +301,24 @@ needs at least one simulated shop.
 of it); once memory freed up the production build succeeded and judge mode was checked in the browser (see M6).
 **The first judge-mode browser call waits for your OK** (it needs a microphone, so it's yours to make).
 
+### M2: medicine mode, same composition under another brand (2026-10-17, built; the dataset is yours to download)
+
+| Item | Where | Verified |
+|---|---|---|
+| Exclusion list: narrow-therapeutic-index drugs (the ten in the brief plus acenocoumarol, aminophylline, Indian spellings such as thyroxine), insulins and biologics (incl. "-mab", "-cept", "-parin", "-grastim"), inhalers (inhaler, rotacap, respules, transcaps), Schedule X (checked against CDSCO's 2016 compilation: 16 drugs incl. ketamine), multi-salt, unknown strength or form | `lib/medicine.ts` | Unit tests for every group |
+| Dataset loader: single-salt rows not discontinued; strength ("650 mg", "30 mg/5 ml") and form with release and route ("SR tablet", "eye/ear drops") | `lib/medicine.ts`, `scripts/seed-medicines.mjs` (`npm run seed:medicines`) | Unit tests; a 3-row made-up CSV seeded end to end (1 kept), then removed. **The real CSV is not downloaded yet** |
+| `medicines` table, `pg_trgm` index, `search_medicines()`, `search_requests.composition` / `ask_alternative` with a check constraint | migration `20261017020000_medicines.sql` | Applied in the SQL editor; from the server: search finds "650 fevrol" and "fevrl 650", `%`/`_` are escaped, anon gets 42501 on table and function, the constraint refuses `ask_alternative` without a composition |
+| `GET /api/medicines?q=` (≥ 3 characters, ≤ 10 results, with `allowed`); the form shows "Composition: … · tablet", the checkbox, the exclusion message and the dataset credit | `app/api/medicines/route.ts`, `components/SearchForm.tsx` | Browser (production build) |
+| The composition is read from the table by id on the server, never taken from the browser; `ask_alternative` is stored only if allowed; `{alternative}` is sent only on quote calls | `lib/validate.ts`, `lib/engine.ts` | Integration test written (mocked Bolna): allowed, excluded and not-asked cases, unknown id refused. **Not run in this session** |
+| Agent: Section 3 Question 2 (asked once, never names a brand, no medical advice, no hold), guardrail exception, `{alternative}` in the variables | `data/bolna-prompt.md`, `data/bolna-prompt-mr.md`; pasted into the Hindi, English and Marathi tabs | `bolna check`: all three tabs match, `{alternative}` used |
+| Extractions `alt_available`, `alt_brand`, `alt_price_inr` | `data/bolna-extractions.json`, `lib/extraction.ts` | Created with `setup-extractions --yes` (15 total). `test-extraction pharmacy` (no call, wallet unchanged): in_stock **no**, alt_available yes, alt_brand "Calpol 650", ready 0, the quote verbatim; `alt_price_inr` came back in 1 of 2 runs (shown as "price not quoted" when missing) |
+| Results: separate **Same composition available** block (shop, brand, price, ready time, disclaimer, credit), only when the user asked; never ranked; the summary names the shop neutrally and adds "ask your doctor" | `components/Results.tsx`, `lib/summary.ts` | Unit tests; browser: Gupta best match, Sharma in the block, Hindi summary sentence, no overflow at 390 px |
+| Simulated pharmacy run: Sharma has only the same composition ("Sanjivani", made up), Patil (Marathi) is out of stock, Gupta and Mehta have it | `data/shops.json` (`pharmacy` overrides), `lib/sim.ts` (Hindi, English, Marathi lines; Marathi needs a native speaker) | Unit tests; browser run with a made-up medicine row, removed afterwards |
+
+**Waiting for you:** download the CSV from <https://www.kaggle.com/datasets/shudhanshusingh/az-medicine-dataset-of-india>
+into `data/raw/` (it's gitignored) and run `npm run seed:medicines`. Until then the lookup finds nothing and pharmacy
+searches ask for the brand only.
+
 ### M6: getting ready to submit (in progress)
 
 | Item | Status |
