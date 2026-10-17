@@ -115,6 +115,12 @@ Poochho never sends `retry_config`, so Bolna does not retry calls. If Bolna repo
 call failed and keeps asking Bolna to stop it while the search page is open. Stopping only works while the call is
 queued or scheduled, so keep Bolna's own timing restriction off or wider than `CALL_WINDOW_IST`.
 
+**Hanging up (2026-10-17, after the first judge call).** Bolna decides when to end a call with a separate check,
+**Agent tab → Hangup using a prompt** (`hangup_after_LLMCall`). The old text asked for a recap before ending, which
+the main prompt forbids, so the call stayed open after the goodbye until the silence timeout. The text is now
+`data/bolna-hangup-prompt.txt`: hang up right after the agent's closing line. **Engine → Hangup on User Silence** is
+8 s (was 15). `npm run bolna -- check` compares both.
+
 ## 5. Agent prompt
 
 The reference copy is `data/bolna-prompt.md`; the dashboard's original is in git history (commit "Snapshot the
