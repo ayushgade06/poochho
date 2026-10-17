@@ -50,7 +50,6 @@ if (cmd === 'check') {
   const prompts = ml?.enabled ? Object.entries(ml.languages).map(([l, v]) => [l, v.system_prompt]) : [['base', agent.agent_prompts?.task_1?.system_prompt]]
   for (const [l, p] of prompts) console.log(`  prompt (${l}) matches data/${promptFile(l)}: ${norm(p) === norm(data(promptFile(l))) ? 'yes' : norm(p) ? 'NO (edited in the dashboard?)' : 'NO, EMPTY'}`)
   console.log(`  welcome message matches data/bolna-welcome.txt: ${norm(agent.agent_welcome_message) === norm(data('bolna-welcome.txt')) ? 'yes' : 'NO'}`)
-  const tc = agent.tasks?.[0]?.task_config ?? {}
   console.log(`  hangup prompt matches data/bolna-hangup-prompt.txt: ${norm(tc.call_cancellation_prompt) === norm(data('bolna-hangup-prompt.txt')) ? 'yes' : 'NO'} (hang up after silence: ${tc.hangup_after_silence}s)`)
   // Bolna refuses a call in a language the agent doesn't have, so every language Poochho calls in must be on it.
   const agentLangs = ml?.enabled ? Object.keys(ml.languages) : []
