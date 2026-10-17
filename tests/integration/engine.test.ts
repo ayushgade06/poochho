@@ -70,7 +70,7 @@ describe('SIMULATED search end to end', () => {
     expect([by['demo-patil-provision'].language, by['demo-sharma-kirana'].language]).toEqual(['mr', 'hi'])
     expect(by['demo-sharma-kirana'].cost_cents).toBeNull() // simulated calls cost nothing
     // An extraction that claims words the shop never said: the quote is dropped on the way out.
-    const req = await db().from('search_requests').insert({ ...base }).select('id').single()
+    const req = await db().from('search_requests').insert({ ...base, medicine_id: undefined }).select('id').single() // medicine_id is createSearch's input, not a column
     created.push(req.data!.id)
     const ex = await db().from('call_executions').insert({ request_id: req.data!.id, shop_id: 'demo-sharma-kirana', mode: 'simulated', status: 'talking' }).select('id').single()
     await applyEvent({ id: ex.data!.id }, { status: 'completed', duration: 20, transcript: 'assistant: Amul Butter है?\nuser: नहीं, खत्म हो गया.', extracted_data: { Q: { in_stock: { objective: 'no' }, stock_quote: { subjective: 'हाँ, दो packet है' } } } }, 'simulated')
@@ -136,7 +136,7 @@ describe('consent and opt-out enforcement', () => {
     expect(ins.error).toBeNull()
     expect((await listShops('live')).find((s) => s.id === TEST_SHOP)?.callable).toBe(true)
 
-    const req = await db().from('search_requests').insert({ ...base }).select('id').single()
+    const req = await db().from('search_requests').insert({ ...base, medicine_id: undefined }).select('id').single() // medicine_id is createSearch's input, not a column
     created.push(req.data!.id)
     const ex = await db().from('call_executions').insert({ request_id: req.data!.id, shop_id: TEST_SHOP, mode: 'simulated', status: 'talking' }).select('id').single()
     await applyEvent({ id: ex.data!.id }, { status: 'completed', duration: 12, extracted_data: { Q: { in_stock: { objective: 'unsure', subjective: '' }, opt_out: { objective: 'yes', subjective: '' } } } }, 'webhook')
