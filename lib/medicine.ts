@@ -74,7 +74,7 @@ const RELEASE = ['SR', 'ER', 'XR', 'MR', 'CR', 'PR', 'XL', 'DR', 'OD', 'DT', 'MD
 // The dosage form from a product name: "Fevrol 650 Tablet" → "tablet", "Glyco 500 SR Tablet" → "SR tablet",
 // "Ciprol Eye/Ear Drops" → "eye/ear drops". Null when the name doesn't say.
 export function formOf(name: string) {
-  const words = name.split(/\s+/)
+  const words = name.split(/[\s-]+/) // "Glycimet -SR 500 Tablet": the release is its own word
   const i = words.findLastIndex((w) => Object.hasOwn(FORMS, w.toLowerCase()))
   if (i < 0) return null
   const where = words[i - 1]?.toLowerCase()

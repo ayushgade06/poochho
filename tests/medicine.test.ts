@@ -75,6 +75,7 @@ describe('reading the dataset', () => {
     expect(formOf('Asthol 100mcg Inhaler')).toBe('inhaler')
     expect(formOf('Pyro 40 Tablet DT')).toBe('DT tablet')
     expect(formOf('Nasoclear Nasal Spray')).toBe('nasal spray')
+    expect(formOf('Glycimet -SR 500 Tablet')).toBe('SR tablet')
     expect(formOf('Something Kit')).toBeNull()
   })
 
